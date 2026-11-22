@@ -1,4 +1,4 @@
-# Backend Dockerfile for Movie Picture API - Production Bottlerocket Release v2
+# Backend Dockerfile for Movie Picture API - Production Bottlerocket Release v3
 FROM public.ecr.aws/docker/library/python:3.10-alpine3.17
 ENV FLASK_RUN_HOST=0.0.0.0
 

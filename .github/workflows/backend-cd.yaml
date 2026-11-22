@@ -132,29 +132,7 @@ jobs:
 
           # 2. Configure aws-auth ConfigMap
           echo "Applying aws-auth ConfigMap..."
-          cat <<EOF | kubectl apply -f -
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: aws-auth
-  namespace: kube-system
-data:
-  mapRoles: |
-    - rolearn: arn:aws:iam::${ACCOUNT_ID}:role/udacity-node-group
-      username: system:node:{{EC2PrivateDNSName}}
-      groups:
-        - system:bootstrappers
-        - system:nodes
-    - rolearn: arn:aws:iam::${ACCOUNT_ID}:role/voclabs
-      username: voclabs
-      groups:
-        - system:masters
-  mapUsers: |
-    - userarn: arn:aws:iam::${ACCOUNT_ID}:user/github-action-user
-      username: github-action-role
-      groups:
-        - system:masters
-EOF
+          sed "s/ACCOUNT_ID/$ACCOUNT_ID/g" $GITHUB_WORKSPACE/setup/aws-auth-patch.yaml | kubectl apply -f - || true
 
           # 3. Check for Ready nodes
           READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c "Ready" || true)
