@@ -30,6 +30,67 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
+      - name: Detect Supported EKS Version & Cleanup Orphaned Resources
+        run: |
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "AWS Account ID: $ACCOUNT_ID"
+
+          # Query available EKS versions in us-east-1
+          SUPPORTED_VERSIONS=$(aws eks describe-addon-versions --query "addons[0].addonVersions[0].compatibilities[*].clusterVersion" --output text 2>/dev/null | tr '\t' '\n' | sort -V | grep -v '^$' || true)
+          echo "Supported EKS versions in region: $SUPPORTED_VERSIONS"
+
+          TARGET_VERSION="1.35"
+          if [ -n "$SUPPORTED_VERSIONS" ]; then
+            if echo "$SUPPORTED_VERSIONS" | grep -qx "1.35"; then
+              TARGET_VERSION="1.35"
+            else
+              TARGET_VERSION=$(echo "$SUPPORTED_VERSIONS" | tail -n 1)
+            fi
+          fi
+          echo "Selected Kubernetes Version: $TARGET_VERSION"
+          echo "K8S_VERSION=$TARGET_VERSION" >> $GITHUB_ENV
+
+          # Cleanup partial resources from prior failed run to prevent collision
+          echo "Cleaning up partial ECR and IAM resources from prior failed attempts..."
+          aws ecr delete-repository --repository-name frontend --force 2>/dev/null || true
+          aws ecr delete-repository --repository-name backend --force 2>/dev/null || true
+
+          aws iam detach-user-policy --user-name github-action-user --policy-arn "arn:aws:iam::$ACCOUNT_ID:policy/github-action-user-permission" 2>/dev/null || true
+          aws iam delete-user --user-name github-action-user 2>/dev/null || true
+          aws iam delete-policy --policy-arn "arn:aws:iam::$ACCOUNT_ID:policy/github-action-user-permission" 2>/dev/null || true
+
+          aws iam detach-role-policy --role-name eks_cluster_role --policy-arn "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy" 2>/dev/null || true
+          aws iam detach-role-policy --role-name eks_cluster_role --policy-arn "arn:aws:iam::aws:policy/AmazonEKSServicePolicy" 2>/dev/null || true
+          aws iam delete-role --role-name eks_cluster_role 2>/dev/null || true
+
+          aws iam detach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy" 2>/dev/null || true
+          aws iam detach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy" 2>/dev/null || true
+          aws iam detach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly" 2>/dev/null || true
+          aws iam delete-role --role-name udacity-node-group 2>/dev/null || true
+
+          # Cleanup partial VPC if no cluster was provisioned
+          CLUSTER_STATUS=$(aws eks describe-cluster --name cluster --query "cluster.status" --output text 2>/dev/null || true)
+          if [ "$CLUSTER_STATUS" != "ACTIVE" ] && [ "$CLUSTER_STATUS" != "CREATING" ]; then
+            VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=udacity" --query "Vpcs[0].VpcId" --output text 2>/dev/null || true)
+            if [ "$VPC_ID" != "None" ] && [ -n "$VPC_ID" ]; then
+              echo "Cleaning up unassociated partial VPC: $VPC_ID"
+              for sub in $(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VPC_ID" --query "Subnets[*].SubnetId" --output text 2>/dev/null); do
+                aws ec2 delete-subnet --subnet-id "$sub" 2>/dev/null || true
+              done
+              for igw in $(aws ec2 describe-internet-gateways --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query "InternetGateways[*].InternetGatewayId" --output text 2>/dev/null); do
+                aws ec2 detach-internet-gateway --internet-gateway-id "$igw" --vpc-id "$VPC_ID" 2>/dev/null || true
+                aws ec2 delete-internet-gateway --internet-gateway-id "$igw" 2>/dev/null || true
+              done
+              for rtb in $(aws ec2 describe-route-tables --filters "Name=vpc-id,Values=$VPC_ID" --query "RouteTables[?Associations[0].Main!=true].RouteTableId" --output text 2>/dev/null); do
+                for assoc in $(aws ec2 describe-route-tables --route-table-ids "$rtb" --query "RouteTables[0].Associations[*].RouteTableAssociationId" --output text 2>/dev/null); do
+                  aws ec2 disassociate-route-table --association-id "$assoc" 2>/dev/null || true
+                done
+                aws ec2 delete-route-table --route-table-id "$rtb" 2>/dev/null || true
+              done
+              aws ec2 delete-vpc --vpc-id "$VPC_ID" 2>/dev/null || true
+            fi
+          fi
+
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
@@ -39,7 +100,15 @@ jobs:
         run: terraform init
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve
+        run: terraform apply -auto-approve -var="k8s_version=${{ env.K8S_VERSION }}"
+
+      - name: Save Terraform State Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: terraform-state
+          path: setup/terraform/terraform.tfstate
+          retention-days: 5
 
       - name: Set up Kubectl
         uses: azure/setup-kubectl@v4
