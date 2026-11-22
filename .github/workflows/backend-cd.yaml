@@ -100,6 +100,11 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      - name: Ensure Backend ECR Repository
+        run: |
+          aws ecr describe-repositories --repository-names backend 2>/dev/null || \
+          aws ecr create-repository --repository-name backend --image-scanning-configuration scanOnPush=true || true
+
       - name: Build Docker Image
         run: |
           docker build \
@@ -127,8 +132,29 @@ jobs:
 
           # 2. Configure aws-auth ConfigMap
           echo "Applying aws-auth ConfigMap..."
-          sed -i "s/ACCOUNT_ID/$ACCOUNT_ID/g" ../../setup/aws-auth-patch.yaml
-          kubectl apply -f ../../setup/aws-auth-patch.yaml || true
+          cat <<EOF | kubectl apply -f -
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: aws-auth
+  namespace: kube-system
+data:
+  mapRoles: |
+    - rolearn: arn:aws:iam::${ACCOUNT_ID}:role/udacity-node-group
+      username: system:node:{{EC2PrivateDNSName}}
+      groups:
+        - system:bootstrappers
+        - system:nodes
+    - rolearn: arn:aws:iam::${ACCOUNT_ID}:role/voclabs
+      username: voclabs
+      groups:
+        - system:masters
+  mapUsers: |
+    - userarn: arn:aws:iam::${ACCOUNT_ID}:user/github-action-user
+      username: github-action-role
+      groups:
+        - system:masters
+EOF
 
           # 3. Check for Ready nodes
           READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c "Ready" || true)

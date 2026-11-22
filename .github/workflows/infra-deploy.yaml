@@ -1,10 +1,6 @@
 name: Deploy Infrastructure
 
 on:
-  push:
-    paths:
-      - 'setup/terraform/**'
-      - '.github/workflows/infra-deploy.yaml'
   workflow_dispatch:
 
 env:
@@ -50,23 +46,9 @@ jobs:
           echo "Selected Kubernetes Version: $TARGET_VERSION"
           echo "K8S_VERSION=$TARGET_VERSION" >> $GITHUB_ENV
 
-          # Cleanup partial resources from prior failed run to prevent collision
-          echo "Cleaning up partial ECR and IAM resources from prior failed attempts..."
-          aws ecr delete-repository --repository-name frontend --force 2>/dev/null || true
-          aws ecr delete-repository --repository-name backend --force 2>/dev/null || true
-
-          aws iam detach-user-policy --user-name github-action-user --policy-arn "arn:aws:iam::$ACCOUNT_ID:policy/github-action-user-permission" 2>/dev/null || true
-          aws iam delete-user --user-name github-action-user 2>/dev/null || true
-          aws iam delete-policy --policy-arn "arn:aws:iam::$ACCOUNT_ID:policy/github-action-user-permission" 2>/dev/null || true
-
-          aws iam detach-role-policy --role-name eks_cluster_role --policy-arn "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy" 2>/dev/null || true
-          aws iam detach-role-policy --role-name eks_cluster_role --policy-arn "arn:aws:iam::aws:policy/AmazonEKSServicePolicy" 2>/dev/null || true
-          aws iam delete-role --role-name eks_cluster_role 2>/dev/null || true
-
-          aws iam detach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy" 2>/dev/null || true
-          aws iam detach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy" 2>/dev/null || true
-          aws iam detach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly" 2>/dev/null || true
-          aws iam delete-role --role-name udacity-node-group 2>/dev/null || true
+          # Ensure ECR repositories exist
+          aws ecr describe-repositories --repository-names frontend 2>/dev/null || aws ecr create-repository --repository-name frontend --image-scanning-configuration scanOnPush=true || true
+          aws ecr describe-repositories --repository-names backend 2>/dev/null || aws ecr create-repository --repository-name backend --image-scanning-configuration scanOnPush=true || true
 
           # Cleanup partial VPC if no cluster was provisioned
           CLUSTER_STATUS=$(aws eks describe-cluster --name cluster --query "cluster.status" --output text 2>/dev/null || true)
