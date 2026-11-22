@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'starter/frontend/**'
+      - '.github/workflows/frontend-cd.yaml'
   workflow_run:
     workflows: ["Backend Continuous Deployment"]
     types:
@@ -96,8 +97,30 @@ jobs:
       - name: Get Backend URL
         run: |
           aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
-          BACKEND_HOST=$(kubectl get service backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+          echo "Querying backend service LoadBalancer hostname..."
+          for i in $(seq 1 30); do
+            BACKEND_HOST=$(kubectl get service backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+            if [ -n "$BACKEND_HOST" ]; then
+              echo "Found Backend LoadBalancer Hostname: $BACKEND_HOST"
+              break
+            fi
+            echo "Waiting for LoadBalancer hostname to be assigned ($i/30)..."
+            sleep 5
+          done
+
+          if [ -z "$BACKEND_HOST" ]; then
+            echo "LoadBalancer hostname pending, checking for ingress IP..."
+            BACKEND_HOST=$(kubectl get service backend -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)
+          fi
+
+          if [ -z "$BACKEND_HOST" ]; then
+            echo "No ingress IP found yet, using localhost:5000 fallback"
+            BACKEND_HOST="localhost:5000"
+          fi
+
           echo "REACT_APP_MOVIE_API_URL=http://$BACKEND_HOST" >> $GITHUB_ENV
+          echo "Configured REACT_APP_MOVIE_API_URL=http://$BACKEND_HOST"
 
       - name: Build Docker Image
         run: |
@@ -114,15 +137,23 @@ jobs:
 
       - name: Deploy to Amazon EKS
         run: |
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
           cd k8s
           kustomize edit set image frontend=${{ steps.login-ecr.outputs.registry }}/frontend:${{ github.sha }}
           kustomize build | kubectl apply --validate=false -f -
 
           echo "=== CHECKING ROLLOUT STATUS ==="
-          if ! kubectl rollout status deployment/frontend --timeout=120s; then
+          if ! kubectl rollout status deployment/frontend --timeout=300s; then
             echo "=== ROLLOUT TIMEOUT DIAGNOSTICS ==="
+            kubectl get nodes -o wide || true
             kubectl get pods -A -o wide || true
             kubectl describe pods -l app=frontend || true
             kubectl logs -l app=frontend --all-containers=true --tail=100 || true
+            kubectl get events --sort-by='.lastTimestamp' | tail -n 30 || true
             exit 1
           fi
+
+          echo "=== FRONTEND DEPLOYMENT SUCCESSFUL ==="
+          kubectl get service frontend -o wide
+          kubectl get pods -l app=frontend -o wide

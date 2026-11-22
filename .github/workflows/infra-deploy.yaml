@@ -100,7 +100,22 @@ jobs:
         run: terraform init
 
       - name: Terraform Apply
-        run: terraform apply -auto-approve -var="k8s_version=${{ env.K8S_VERSION }}"
+        run: |
+          CLUSTER_STATUS=$(aws eks describe-cluster --name cluster --query "cluster.status" --output text 2>/dev/null || true)
+          if [ "$CLUSTER_STATUS" = "ACTIVE" ]; then
+            echo "EKS Cluster 'cluster' is already ACTIVE. Importing into terraform state..."
+            terraform import -var="k8s_version=${{ env.K8S_VERSION }}" aws_eks_cluster.main cluster || true
+            terraform import -var="k8s_version=${{ env.K8S_VERSION }}" aws_iam_role.eks_cluster eks_cluster_role || true
+            terraform import -var="k8s_version=${{ env.K8S_VERSION }}" aws_iam_role.node_group udacity-node-group || true
+            terraform import -var="k8s_version=${{ env.K8S_VERSION }}" aws_iam_user.github_action_user github-action-user || true
+            terraform import -var="k8s_version=${{ env.K8S_VERSION }}" aws_ecr_repository.frontend frontend || true
+            terraform import -var="k8s_version=${{ env.K8S_VERSION }}" aws_ecr_repository.backend backend || true
+            VPC_ID=$(aws ec2 describe-vpcs --filters "Name=tag:Name,Values=udacity" --query "Vpcs[0].VpcId" --output text 2>/dev/null || true)
+            if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+              terraform import -var="k8s_version=${{ env.K8S_VERSION }}" aws_vpc.vpc "$VPC_ID" || true
+            fi
+          fi
+          terraform apply -auto-approve -var="k8s_version=${{ env.K8S_VERSION }}"
 
       - name: Save Terraform State Artifact
         uses: actions/upload-artifact@v4

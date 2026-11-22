@@ -193,19 +193,13 @@ resource "aws_iam_role_policy_attachment" "eks_service" {
 ##################
 # EKS Node Group
 ##################
-# Track latest AL2023 release for the given k8s version (Amazon Linux 2 node AMIs are not published for k8s 1.33+)
-data "aws_ssm_parameter" "eks_ami_release_version" {
-  name = "/aws/service/eks/optimized-ami/${aws_eks_cluster.main.version}/amazon-linux-2023/x86_64/standard/recommended/release_version"
-}
-
 resource "aws_eks_node_group" "main" {
-  node_group_name = "udacity"
+  node_group_name = "udacity-bottlerocket"
   cluster_name    = aws_eks_cluster.main.name
   version         = aws_eks_cluster.main.version
   node_role_arn   = aws_iam_role.node_group.arn
   subnet_ids      = [var.enable_private == true ? aws_subnet.private_subnet.id : aws_subnet.public_subnet.id]
-  ami_type        = "AL2023_x86_64_STANDARD"
-  release_version = nonsensitive(data.aws_ssm_parameter.eks_ami_release_version.value)
+  ami_type        = "BOTTLEROCKET_x86_64"
   instance_types  = ["t3.small"]
 
   scaling_config {

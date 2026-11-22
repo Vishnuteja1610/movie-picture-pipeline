@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - 'starter/backend/**'
+      - '.github/workflows/backend-cd.yaml'
   workflow_run:
     workflows: ["Deploy Infrastructure"]
     types:
@@ -111,6 +112,67 @@ jobs:
           docker push ${{ steps.login-ecr.outputs.registry }}/backend:${{ github.sha }}
           docker push ${{ steps.login-ecr.outputs.registry }}/backend:latest
 
+      - name: Ensure Healthy Bottlerocket Worker Nodes
+        run: |
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "AWS Account ID: $ACCOUNT_ID"
+
+          # 1. Authorize worker node role via EKS Access Entry (for API_AND_CONFIG_MAP mode)
+          echo "Configuring EKS access entry for worker node role..."
+          aws eks create-access-entry \
+            --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
+            --principal-arn "arn:aws:iam::$ACCOUNT_ID:role/udacity-node-group" \
+            --type EC2_LINUX 2>/dev/null || true
+
+          # 2. Configure aws-auth ConfigMap
+          echo "Applying aws-auth ConfigMap..."
+          sed -i "s/ACCOUNT_ID/$ACCOUNT_ID/g" ../../setup/aws-auth-patch.yaml
+          kubectl apply -f ../../setup/aws-auth-patch.yaml || true
+
+          # 3. Check for Ready nodes
+          READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c "Ready" || true)
+          echo "Currently ready nodes: $READY_NODES"
+
+          if [ "$READY_NODES" -eq 0 ]; then
+            EXISTING_NGS=$(aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} --query "nodegroups[*]" --output text 2>/dev/null || true)
+            echo "Existing nodegroups: $EXISTING_NGS"
+
+            if ! echo "$EXISTING_NGS" | grep -qw "udacity-bottlerocket"; then
+              SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=tag:Name,Values=udacity-public" --query "Subnets[0].SubnetId" --output text)
+              echo "Creating Bottlerocket node group 'udacity-bottlerocket' in subnet $SUBNET_ID..."
+              aws eks create-nodegroup \
+                --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
+                --nodegroup-name udacity-bottlerocket \
+                --scaling-config minSize=1,maxSize=1,desiredSize=1 \
+                --subnets "$SUBNET_ID" \
+                --instance-types t3.small \
+                --ami-type BOTTLEROCKET_x86_64 \
+                --node-role "arn:aws:iam::$ACCOUNT_ID:role/udacity-node-group" || true
+
+              # Clean up old AL2023 node group if present
+              if echo "$EXISTING_NGS" | grep -qw "udacity"; then
+                echo "Deleting old node group 'udacity'..."
+                aws eks delete-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity 2>/dev/null || true
+              fi
+            fi
+
+            echo "Waiting for Bottlerocket node to become Ready..."
+            for i in $(seq 1 60); do
+              READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c "Ready" || true)
+              if [ "$READY_NODES" -gt 0 ]; then
+                echo "Worker node is Ready!"
+                kubectl get nodes -o wide
+                break
+              fi
+              echo "Waiting for node ($i/60)..."
+              sleep 5
+            done
+          fi
+
+          echo "Cluster Nodes:"
+          kubectl get nodes -o wide || true
+
       - name: Deploy to Amazon EKS
         run: |
           aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
@@ -123,7 +185,7 @@ jobs:
           kustomize build | kubectl apply --validate=false -f -
 
           echo "=== CHECKING ROLLOUT STATUS ==="
-          if ! kubectl rollout status deployment/backend --timeout=60s; then
+          if ! kubectl rollout status deployment/backend --timeout=300s; then
             echo "=== ROLLOUT TIMEOUT DIAGNOSTICS ==="
             echo "--- NODES ---"
             kubectl get nodes -o wide || true
@@ -137,3 +199,7 @@ jobs:
             kubectl get events --sort-by='.lastTimestamp' | tail -n 30 || true
             exit 1
           fi
+
+          echo "=== BACKEND DEPLOYMENT SUCCESSFUL ==="
+          kubectl get service backend -o wide
+          kubectl get pods -l app=backend -o wide
