@@ -6,6 +6,10 @@ on:
       - main
     paths:
       - 'starter/backend/**'
+  workflow_run:
+    workflows: ["Deploy Infrastructure"]
+    types:
+      - completed
   workflow_dispatch:
 
 env:
@@ -15,6 +19,7 @@ env:
 jobs:
   lint:
     name: Lint Backend
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -39,6 +44,7 @@ jobs:
 
   test:
     name: Test Backend
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     defaults:
       run:
