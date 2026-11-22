@@ -1,0 +1,32 @@
+name: 'Setup Backend Environment'
+description: 'Sets up Python, caches Pipenv virtual environment, and installs dependencies'
+
+inputs:
+  python-version:
+    description: 'Python version to set up'
+    required: false
+    default: '3.10'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Cache Pipenv virtualenv
+      uses: actions/cache@v4
+      with:
+        path: ~/.local/share/virtualenvs
+        key: pipenv-${{ runner.os }}-${{ hashFiles('starter/backend/Pipfile.lock') }}
+        restore-keys: |
+          pipenv-${{ runner.os }}-
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: starter/backend
+      run: |
+        python -m pip install --upgrade pip
+        pip install pipenv
+        pipenv install --dev

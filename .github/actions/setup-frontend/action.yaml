@@ -1,0 +1,29 @@
+name: 'Setup Frontend Environment'
+description: 'Sets up Node.js, caches npm dependencies, and installs package-lock dependencies'
+
+inputs:
+  node-version:
+    description: 'Node version to set up'
+    required: false
+    default: '18.x'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup NodeJS
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ inputs.node-version }}
+
+    - name: Cache npm dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.npm
+        key: npm-${{ runner.os }}-${{ hashFiles('starter/frontend/package-lock.json') }}
+        restore-keys: |
+          npm-${{ runner.os }}-
+
+    - name: Install dependencies
+      shell: bash
+      working-directory: starter/frontend
+      run: npm ci

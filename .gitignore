@@ -9,6 +9,19 @@ tfplan
 node_modules/
 build/
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.env
+.venv
+env/
+venv/
+ENV/
+
 # Scratch files from lab troubleshooting
 eks-describe.json
 smoke-source.json
