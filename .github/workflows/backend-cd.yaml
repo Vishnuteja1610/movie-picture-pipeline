@@ -114,7 +114,26 @@ jobs:
       - name: Deploy to Amazon EKS
         run: |
           aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+          echo "=== KUBERNETES NODES ==="
+          kubectl get nodes -o wide || true
+
           cd k8s
           kustomize edit set image backend=${{ steps.login-ecr.outputs.registry }}/backend:${{ github.sha }}
           kustomize build | kubectl apply --validate=false -f -
-          kubectl rollout status deployment/backend --timeout=300s
+
+          echo "=== CHECKING ROLLOUT STATUS ==="
+          if ! kubectl rollout status deployment/backend --timeout=60s; then
+            echo "=== ROLLOUT TIMEOUT DIAGNOSTICS ==="
+            echo "--- NODES ---"
+            kubectl get nodes -o wide || true
+            echo "--- PODS ---"
+            kubectl get pods -A -o wide || true
+            echo "--- BACKEND POD DETAILS ---"
+            kubectl describe pods -l app=backend || true
+            echo "--- BACKEND POD LOGS ---"
+            kubectl logs -l app=backend --all-containers=true --tail=100 || true
+            echo "--- CLUSTER RECENT EVENTS ---"
+            kubectl get events --sort-by='.lastTimestamp' | tail -n 30 || true
+            exit 1
+          fi
