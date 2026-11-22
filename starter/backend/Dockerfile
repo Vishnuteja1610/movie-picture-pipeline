@@ -1,4 +1,4 @@
-# Backend Dockerfile for Movie Picture API
+# Backend Dockerfile for Movie Picture API - Production
 FROM public.ecr.aws/docker/library/python:3.10-alpine3.17
 ENV FLASK_RUN_HOST=0.0.0.0
 
