@@ -24,11 +24,16 @@ jobs:
         with:
           python-version: '3.10'
           cache: 'pipenv'
+          cache-dependency-path: starter/backend/Pipfile.lock
 
       - name: Install dependencies
+        env:
+          CFLAGS: "-Wno-error=incompatible-pointer-types -std=gnu17"
         run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3-dev libpcre3 libpcre3-dev
           pip install pipenv
-          pipenv install --dev
+          pipenv install --dev || pipenv install --dev --skip-lock
 
       - name: Run linting
         run: pipenv run lint
@@ -48,11 +53,16 @@ jobs:
         with:
           python-version: '3.10'
           cache: 'pipenv'
+          cache-dependency-path: starter/backend/Pipfile.lock
 
       - name: Install dependencies
+        env:
+          CFLAGS: "-Wno-error=incompatible-pointer-types -std=gnu17"
         run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential python3-dev libpcre3 libpcre3-dev
           pip install pipenv
-          pipenv install --dev
+          pipenv install --dev || pipenv install --dev --skip-lock
 
       - name: Run tests
         run: pipenv run test

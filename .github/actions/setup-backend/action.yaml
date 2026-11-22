@@ -14,19 +14,16 @@ runs:
       uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
-
-    - name: Cache Pipenv virtualenv
-      uses: actions/cache@v4
-      with:
-        path: ~/.local/share/virtualenvs
-        key: pipenv-${{ runner.os }}-${{ hashFiles('starter/backend/Pipfile.lock') }}
-        restore-keys: |
-          pipenv-${{ runner.os }}-
+        cache: 'pipenv'
+        cache-dependency-path: starter/backend/Pipfile.lock
 
     - name: Install dependencies
       shell: bash
       working-directory: starter/backend
+      env:
+        CFLAGS: "-Wno-error=incompatible-pointer-types -std=gnu17"
       run: |
-        python -m pip install --upgrade pip
+        sudo apt-get update
+        sudo apt-get install -y build-essential python3-dev libpcre3 libpcre3-dev
         pip install pipenv
-        pipenv install --dev
+        pipenv install --dev || pipenv install --dev --skip-lock
