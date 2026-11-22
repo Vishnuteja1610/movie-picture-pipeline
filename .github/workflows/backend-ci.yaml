@@ -11,7 +11,7 @@ on:
 jobs:
   lint:
     name: Lint Backend
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: starter/backend
@@ -27,20 +27,18 @@ jobs:
           cache-dependency-path: starter/backend/Pipfile.lock
 
       - name: Install dependencies
-        env:
-          CFLAGS: "-Wno-error=incompatible-pointer-types -std=gnu17"
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3-dev libpcre3 libpcre3-dev
+          sudo apt-get install -y build-essential libpcre3-dev
           pip install pipenv
-          pipenv install --dev || pipenv install --dev --skip-lock
+          pipenv install --dev
 
       - name: Run linting
         run: pipenv run lint
 
   test:
     name: Test Backend
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: starter/backend
@@ -56,13 +54,11 @@ jobs:
           cache-dependency-path: starter/backend/Pipfile.lock
 
       - name: Install dependencies
-        env:
-          CFLAGS: "-Wno-error=incompatible-pointer-types -std=gnu17"
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential python3-dev libpcre3 libpcre3-dev
+          sudo apt-get install -y build-essential libpcre3-dev
           pip install pipenv
-          pipenv install --dev || pipenv install --dev --skip-lock
+          pipenv install --dev
 
       - name: Run tests
         run: pipenv run test
@@ -70,7 +66,7 @@ jobs:
   build:
     name: Build Backend Docker Image
     needs: [lint, test]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     defaults:
       run:
         working-directory: starter/backend
