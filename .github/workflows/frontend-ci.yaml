@@ -15,7 +15,6 @@ jobs:
     defaults:
       run:
         working-directory: starter/frontend
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,20 +22,14 @@ jobs:
       - name: Setup NodeJS
         uses: actions/setup-node@v4
         with:
-          node-version: '18.x'
-
-      - name: Perform a cache action to restore cache before dependency install
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: npm-${{ runner.os }}-${{ hashFiles('starter/frontend/package-lock.json') }}
-          restore-keys: |
-            npm-${{ runner.os }}-
+          node-version: '18.14'
+          cache: 'npm'
+          cache-dependency-path: starter/frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run the npm run lint command
+      - name: Run linting
         run: npm run lint
 
   test:
@@ -45,7 +38,6 @@ jobs:
     defaults:
       run:
         working-directory: starter/frontend
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -53,70 +45,32 @@ jobs:
       - name: Setup NodeJS
         uses: actions/setup-node@v4
         with:
-          node-version: '18.x'
-
-      - name: Perform a cache action to restore cache before dependency install
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: npm-${{ runner.os }}-${{ hashFiles('starter/frontend/package-lock.json') }}
-          restore-keys: |
-            npm-${{ runner.os }}-
+          node-version: '18.14'
+          cache: 'npm'
+          cache-dependency-path: starter/frontend/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Run the npm run test command
-        run: npm run test
+      - name: Run tests
         env:
           CI: true
+        run: npm test
 
   build:
-    name: Build Frontend
+    name: Build Frontend Docker Image
     needs: [lint, test]
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: starter/frontend
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup NodeJS
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18.x'
-
-      - name: Perform a cache action to restore cache before dependency install
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: npm-${{ runner.os }}-${{ hashFiles('starter/frontend/package-lock.json') }}
-          restore-keys: |
-            npm-${{ runner.os }}-
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run the npm run test command
-        run: npm run test
-        env:
-          CI: true
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build frontend Docker image
+      - name: Build Docker Image
         run: |
           docker build \
             --build-arg REACT_APP_MOVIE_API_URL=http://localhost:5000 \
-            --tag mp-frontend:latest .
-
-      - name: Generate Job Summary
-        if: always()
-        run: |
-          echo "### Frontend CI Results :rocket:" >> $GITHUB_STEP_SUMMARY
-          echo "- **Lint Status**: Passed" >> $GITHUB_STEP_SUMMARY
-          echo "- **Test Status**: Passed" >> $GITHUB_STEP_SUMMARY
-          echo "- **Docker Build Status**: Succeeded" >> $GITHUB_STEP_SUMMARY
+            --tag frontend:latest \
+            .
