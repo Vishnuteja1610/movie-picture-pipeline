@@ -93,16 +93,209 @@ jobs:
       - name: Log in to Amazon ECR
         id: login-ecr
         run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ACCOUNT_ID=""
+          for i in 1 2 3; do
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)
+            if [ -n "$ACCOUNT_ID" ] && [ "$ACCOUNT_ID" != "None" ]; then
+              break
+            fi
+            sleep 2
+          done
           REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           echo "registry=$REGISTRY" >> $GITHUB_OUTPUT
           echo "Logging into Amazon ECR: $REGISTRY"
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin "$REGISTRY"
+          LOGIN_SUCCESS=false
+          for attempt in 1 2 3; do
+            if aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin "$REGISTRY"; then
+              LOGIN_SUCCESS=true
+              echo "ECR login successful"
+              break
+            fi
+            echo "Retrying ECR login (attempt $attempt/3)..."
+            sleep 3
+          done
+          if [ "$LOGIN_SUCCESS" != "true" ]; then
+            echo "Failed to log in to Amazon ECR after 3 attempts"
+            exit 1
+          fi
 
       - name: Ensure Frontend ECR Repository
         run: |
           aws ecr describe-repositories --repository-names frontend 2>/dev/null || \
           aws ecr create-repository --repository-name frontend --image-scanning-configuration scanOnPush=true || true
+
+      - name: Ensure Healthy Bottlerocket Worker Nodes
+        run: |
+          exec > >(tee -a diagnostics.log) 2>&1
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "AWS Account ID: $ACCOUNT_ID"
+
+          # 1. Ensure eks_cluster_role exists
+          echo "Checking eks_cluster_role..."
+          if ! aws iam get-role --role-name eks_cluster_role >/dev/null 2>&1; then
+            echo "Recreating eks_cluster_role..."
+            aws iam create-role \
+              --role-name eks_cluster_role \
+              --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"eks.amazonaws.com"},"Action":"sts:AssumeRole"}]}' || true
+            aws iam attach-role-policy --role-name eks_cluster_role --policy-arn "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy" || true
+            aws iam attach-role-policy --role-name eks_cluster_role --policy-arn "arn:aws:iam::aws:policy/AmazonEKSServicePolicy" || true
+          fi
+
+          # 2. Ensure udacity-node-group role exists
+          echo "Checking udacity-node-group role..."
+          if ! aws iam get-role --role-name udacity-node-group >/dev/null 2>&1; then
+            echo "Recreating udacity-node-group role..."
+            aws iam create-role \
+              --role-name udacity-node-group \
+              --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}' || true
+          fi
+          aws iam attach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy" 2>/dev/null || true
+          aws iam attach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy" 2>/dev/null || true
+          aws iam attach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly" 2>/dev/null || true
+
+          # Wait 5 seconds for IAM propagation
+          sleep 5
+
+          # 3. Authorize worker node role via EKS Access Entry
+          echo "Configuring EKS access entry for worker node role..."
+          aws eks create-access-entry \
+            --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
+            --principal-arn "arn:aws:iam::$ACCOUNT_ID:role/udacity-node-group" \
+            --type EC2_LINUX 2>/dev/null || true
+
+          # 4. Configure aws-auth ConfigMap
+          echo "Applying aws-auth ConfigMap..."
+          sed "s/ACCOUNT_ID/$ACCOUNT_ID/g" $GITHUB_WORKSPACE/setup/aws-auth-patch.yaml | kubectl apply -f - || true
+
+          # 5. Clean up any stale NotReady nodes that no longer exist
+          for dead_node in $(kubectl get nodes --no-headers 2>/dev/null | awk '$2 ~ /NotReady/ {print $1}'); do
+            echo "Cleaning up stale NotReady node: $dead_node"
+            kubectl delete node "$dead_node" 2>/dev/null || true
+          done
+
+          # 6. Check for actually Ready nodes
+          READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
+          echo "Currently ready nodes: $READY_NODES"
+
+          if [ "$READY_NODES" -eq 0 ]; then
+            echo "Checking nodegroup status in cluster ${{ env.EKS_CLUSTER_NAME }}..."
+            NG_STATUS=$(aws eks describe-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket --query "nodegroup.status" --output text 2>/dev/null || echo "NONE")
+            echo "udacity-bottlerocket nodegroup status: $NG_STATUS"
+
+            if [ "$NG_STATUS" = "CREATING" ]; then
+              echo "Nodegroup is already CREATING, waiting for ACTIVE..."
+              aws eks wait nodegroup-active --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket 2>/dev/null || sleep 60
+            elif [ "$NG_STATUS" = "ACTIVE" ]; then
+              echo "Nodegroup is ACTIVE. Waiting up to 60s for worker node to register..."
+              for wait_i in $(seq 1 6); do
+                READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
+                if [ "$READY_NODES" -gt 0 ]; then
+                  echo "Worker node is Ready ($READY_NODES ready)!"
+                  break
+                fi
+                sleep 10
+              done
+            fi
+
+            # Re-check ready nodes after waiting
+            READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
+            if [ "$READY_NODES" -eq 0 ]; then
+              echo "Still 0 ready nodes. Cleaning up stale nodegroups and recreating fresh..."
+              EXISTING_NGS=$(aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} --query "nodegroups[*]" --output text 2>/dev/null || true)
+              echo "Existing nodegroups: $EXISTING_NGS"
+
+              STUCK_INSTANCES=$(aws ec2 describe-instances \
+                --filters "Name=tag:eks:nodegroup-name,Values=udacity-bottlerocket" "Name=instance-state-name,Values=running,pending" \
+                --query "Reservations[*].Instances[*].InstanceId" --output text 2>/dev/null || true)
+              echo "Stuck instances before cleanup: $STUCK_INSTANCES"
+
+              if echo "$EXISTING_NGS" | grep -qw "udacity-bottlerocket"; then
+                echo "Zero ready nodes in cluster! Deleting stale nodegroup udacity-bottlerocket..."
+                aws eks delete-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket || true
+                echo "Waiting for stale nodegroup to be deleted..."
+                aws eks wait nodegroup-deleted --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket 2>/dev/null || sleep 60
+              fi
+
+              # Clean up old AL2023 node group if present
+              if echo "$EXISTING_NGS" | grep -qw "udacity"; then
+                echo "Deleting old node group 'udacity'..."
+                aws eks delete-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity 2>/dev/null || true
+              fi
+
+              # Terminate any leftover stuck instances
+              if [ -n "$STUCK_INSTANCES" ] && [ "$STUCK_INSTANCES" != "None" ]; then
+                echo "Terminating stuck instance(s): $STUCK_INSTANCES..."
+                aws ec2 terminate-instances --instance-ids $STUCK_INSTANCES 2>/dev/null || true
+              fi
+
+              echo "Ensuring EKS access entry for worker node role..."
+              aws eks delete-access-entry --cluster-name ${{ env.EKS_CLUSTER_NAME }} --principal-arn "arn:aws:iam::$ACCOUNT_ID:role/udacity-node-group" 2>/dev/null || true
+              aws eks create-access-entry \
+                --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
+                --principal-arn "arn:aws:iam::$ACCOUNT_ID:role/udacity-node-group" \
+                --type EC2_LINUX || true
+
+              SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=tag:Name,Values=udacity-public" --query "Subnets[0].SubnetId" --output text 2>/dev/null || true)
+              if [ -z "$SUBNET_ID" ] || [ "$SUBNET_ID" = "None" ]; then
+                SUBNET_ID=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.subnetIds[0]" --output text)
+              fi
+              echo "Creating fresh Bottlerocket node group 'udacity-bottlerocket' in subnet $SUBNET_ID..."
+              aws eks create-nodegroup \
+                --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
+                --nodegroup-name udacity-bottlerocket \
+                --scaling-config minSize=1,maxSize=1,desiredSize=1 \
+                --subnets "$SUBNET_ID" \
+                --instance-types t3.small \
+                --ami-type BOTTLEROCKET_x86_64 \
+                --node-role "arn:aws:iam::$ACCOUNT_ID:role/udacity-node-group" || true
+
+              echo "Waiting for fresh nodegroup to become ACTIVE..."
+              aws eks wait nodegroup-active --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket 2>/dev/null || sleep 60
+            fi
+
+            echo "=== DESCRIBING NODEGROUPS ==="
+            for ng in $(aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} --query "nodegroups[*]" --output text 2>/dev/null); do
+              echo "--- Nodegroup: $ng ---"
+              aws eks describe-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name "$ng" --query "nodegroup.[status,amiType,health.issues]" --output json || true
+            done
+
+            echo "Waiting up to 480s for Bottlerocket node to become Ready..."
+            for i in $(seq 1 48); do
+              READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
+              if [ "$READY_NODES" -gt 0 ]; then
+                echo "Worker node is Ready!"
+                kubectl get nodes -o wide
+                break
+              fi
+              if [ $((i % 6)) -eq 0 ]; then
+                echo "--- NODES CURRENT STATUS ($i/48) ---"
+                kubectl get nodes -o wide 2>/dev/null || true
+                aws ec2 describe-instances \
+                  --filters "Name=tag:eks:nodegroup-name,Values=udacity-bottlerocket" "Name=instance-state-name,Values=running,pending" \
+                  --query "Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress,PrivateIpAddress]" --output json 2>/dev/null || true
+              fi
+              echo "Waiting for node ($i/48)..."
+              sleep 10
+            done
+          fi
+
+          FINAL_READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
+          if [ "$FINAL_READY_NODES" -eq 0 ]; then
+            echo "ERROR: No worker node became Ready within timeout!"
+            echo "--- EKS NODEGROUPS ---"
+            aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} || true
+            for ng in $(aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} --query "nodegroups[*]" --output text 2>/dev/null); do
+              aws eks describe-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name "$ng" || true
+            done
+            echo "--- K8S NODES & EVENTS ---"
+            kubectl get nodes -o wide || true
+            kubectl get events --sort-by='.lastTimestamp' | tail -n 30 || true
+            exit 1
+          fi
+
+          echo "Cluster Nodes:"
+          kubectl get nodes -o wide || true
 
       - name: Get Backend URL
         run: |
@@ -246,7 +439,7 @@ jobs:
             echo ""
             echo "--- DEPLOYMENTS ---"
             kubectl get deployments -o wide 2>&1 || true
-          } > "$GITHUB_WORKSPACE/diagnostics.log"
+          } | tee diagnostics.log "$GITHUB_WORKSPACE/diagnostics.log"
 
       - name: Upload Rollout Diagnostics
         uses: actions/upload-artifact@v4

@@ -102,11 +102,31 @@ jobs:
       - name: Log in to Amazon ECR
         id: login-ecr
         run: |
-          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          ACCOUNT_ID=""
+          for i in 1 2 3; do
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)
+            if [ -n "$ACCOUNT_ID" ] && [ "$ACCOUNT_ID" != "None" ]; then
+              break
+            fi
+            sleep 2
+          done
           REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           echo "registry=$REGISTRY" >> $GITHUB_OUTPUT
           echo "Logging into Amazon ECR: $REGISTRY"
-          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin "$REGISTRY"
+          LOGIN_SUCCESS=false
+          for attempt in 1 2 3; do
+            if aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin "$REGISTRY"; then
+              LOGIN_SUCCESS=true
+              echo "ECR login successful"
+              break
+            fi
+            echo "Retrying ECR login (attempt $attempt/3)..."
+            sleep 3
+          done
+          if [ "$LOGIN_SUCCESS" != "true" ]; then
+            echo "Failed to log in to Amazon ECR after 3 attempts"
+            exit 1
+          fi
 
       - name: Ensure Backend ECR Repository
         run: |
@@ -168,8 +188,31 @@ jobs:
           echo "Currently ready nodes: $READY_NODES"
 
           if [ "$READY_NODES" -eq 0 ]; then
-            EXISTING_NGS=$(aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} --query "nodegroups[*]" --output text 2>/dev/null || true)
-            echo "Existing nodegroups: $EXISTING_NGS"
+            echo "Checking nodegroup status in cluster ${{ env.EKS_CLUSTER_NAME }}..."
+            NG_STATUS=$(aws eks describe-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket --query "nodegroup.status" --output text 2>/dev/null || echo "NONE")
+            echo "udacity-bottlerocket nodegroup status: $NG_STATUS"
+
+            if [ "$NG_STATUS" = "CREATING" ]; then
+              echo "Nodegroup is already CREATING, waiting for ACTIVE..."
+              aws eks wait nodegroup-active --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket 2>/dev/null || sleep 60
+            elif [ "$NG_STATUS" = "ACTIVE" ]; then
+              echo "Nodegroup is ACTIVE. Waiting up to 60s for worker node to register..."
+              for wait_i in $(seq 1 6); do
+                READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
+                if [ "$READY_NODES" -gt 0 ]; then
+                  echo "Worker node is Ready ($READY_NODES ready)!"
+                  break
+                fi
+                sleep 10
+              done
+            fi
+
+            # Re-check ready nodes after waiting
+            READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
+            if [ "$READY_NODES" -eq 0 ]; then
+              echo "Still 0 ready nodes. Cleaning up stale nodegroups and recreating fresh..."
+              EXISTING_NGS=$(aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} --query "nodegroups[*]" --output text 2>/dev/null || true)
+              echo "Existing nodegroups: $EXISTING_NGS"
 
             STUCK_INSTANCES=$(aws ec2 describe-instances \
               --filters "Name=tag:eks:nodegroup-name,Values=udacity-bottlerocket" "Name=instance-state-name,Values=running,pending" \
