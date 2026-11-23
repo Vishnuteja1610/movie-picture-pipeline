@@ -162,6 +162,56 @@ jobs:
           echo "=== FRONTEND DEPLOYMENT SUCCESSFUL ==="
           kubectl get service frontend -o wide
           kubectl get pods -l app=frontend -o wide
+          kubectl get services -o wide
+          kubectl get deployments -o wide
+
+      - name: Save Diagnostics & Step Summary
+        if: always()
+        run: |
+          FRONTEND_HOST=$(kubectl get service frontend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+          BACKEND_HOST=$(kubectl get service backend -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)
+
+          echo "## 🎬 Movie Picture Pipeline Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Service | URL | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Frontend UI** | [http://$FRONTEND_HOST](http://$FRONTEND_HOST) | ✅ Live |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Backend API** | [http://$BACKEND_HOST/movies](http://$BACKEND_HOST/movies) | ✅ Live |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Kubernetes Resources" >> $GITHUB_STEP_SUMMARY
+          echo '```text' >> $GITHUB_STEP_SUMMARY
+          echo "--- SERVICES ---" >> $GITHUB_STEP_SUMMARY
+          kubectl get services -o wide >> $GITHUB_STEP_SUMMARY 2>&1 || true
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "--- PODS ---" >> $GITHUB_STEP_SUMMARY
+          kubectl get pods -o wide >> $GITHUB_STEP_SUMMARY 2>&1 || true
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "--- DEPLOYMENTS ---" >> $GITHUB_STEP_SUMMARY
+          kubectl get deployments -o wide >> $GITHUB_STEP_SUMMARY 2>&1 || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+          {
+            echo "=== CLUSTER DEPLOYMENT STATUS ==="
+            echo "Frontend URL: http://$FRONTEND_HOST"
+            echo "Backend URL: http://$BACKEND_HOST/movies"
+            echo ""
+            echo "--- SERVICES ---"
+            kubectl get services -o wide 2>&1 || true
+            echo ""
+            echo "--- PODS ---"
+            kubectl get pods -o wide 2>&1 || true
+            echo ""
+            echo "--- DEPLOYMENTS ---"
+            kubectl get deployments -o wide 2>&1 || true
+          } > "$GITHUB_WORKSPACE/diagnostics.log"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin main --rebase || true
+          cd "$GITHUB_WORKSPACE"
+          git add diagnostics.log || true
+          git commit -m "chore(debug): capture live cluster diagnostics [skip ci]" || true
+          git push origin main || true
 
       - name: Upload Rollout Diagnostics
         uses: actions/upload-artifact@v4
