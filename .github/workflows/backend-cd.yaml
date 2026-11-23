@@ -108,18 +108,6 @@ jobs:
           aws ecr describe-repositories --repository-names backend 2>/dev/null || \
           aws ecr create-repository --repository-name backend --image-scanning-configuration scanOnPush=true || true
 
-      - name: Build Docker Image
-        run: |
-          docker build \
-            --tag ${{ steps.login-ecr.outputs.registry }}/backend:${{ github.sha }} \
-            --tag ${{ steps.login-ecr.outputs.registry }}/backend:latest \
-            .
-
-      - name: Push Docker Image to Amazon ECR
-        run: |
-          docker push ${{ steps.login-ecr.outputs.registry }}/backend:${{ github.sha }}
-          docker push ${{ steps.login-ecr.outputs.registry }}/backend:latest
-
       - name: Ensure Healthy Bottlerocket Worker Nodes
         run: |
           exec > >(tee -a diagnostics.log) 2>&1
@@ -164,18 +152,17 @@ jobs:
           echo "Applying aws-auth ConfigMap..."
           sed "s/ACCOUNT_ID/$ACCOUNT_ID/g" $GITHUB_WORKSPACE/setup/aws-auth-patch.yaml | kubectl apply -f - || true
 
-          # 3. Clean up any stale NotReady nodes that no longer exist
+          # 5. Clean up any stale NotReady nodes that no longer exist
           for dead_node in $(kubectl get nodes --no-headers 2>/dev/null | awk '$2 ~ /NotReady/ {print $1}'); do
             echo "Cleaning up stale NotReady node: $dead_node"
             kubectl delete node "$dead_node" 2>/dev/null || true
           done
 
-          # 4. Check for actually Ready nodes
+          # 6. Check for actually Ready nodes
           READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
           echo "Currently ready nodes: $READY_NODES"
 
-          FINAL_READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
-          if [ "$FINAL_READY_NODES" -eq 0 ]; then
+          if [ "$READY_NODES" -eq 0 ]; then
             EXISTING_NGS=$(aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} --query "nodegroups[*]" --output text 2>/dev/null || true)
             echo "Existing nodegroups: $EXISTING_NGS"
 
@@ -194,6 +181,11 @@ jobs:
                   --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
                   --nodegroup-name udacity-bottlerocket \
                   --scaling-config minSize=1,maxSize=1,desiredSize=1 2>/dev/null || true
+                ASG_NAME=$(aws eks describe-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket --query "nodegroup.resources.autoScalingGroups[0].name" --output text 2>/dev/null || true)
+                if [ -n "$ASG_NAME" ] && [ "$ASG_NAME" != "None" ]; then
+                  echo "Ensuring ASG $ASG_NAME desired-capacity is 1..."
+                  aws autoscaling set-desired-capacity --auto-scaling-group-name "$ASG_NAME" --desired-capacity 1 2>/dev/null || true
+                fi
               fi
             fi
 
@@ -255,6 +247,30 @@ jobs:
           echo "Cluster Nodes:"
           kubectl get nodes -o wide || true
 
+      - name: Build Docker Image
+        run: |
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          if [ -z "$REGISTRY" ]; then
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          fi
+          echo "Building backend Docker image using registry: $REGISTRY"
+          docker build \
+            --tag "$REGISTRY/backend:${{ github.sha }}" \
+            --tag "$REGISTRY/backend:latest" \
+            .
+
+      - name: Push Docker Image to Amazon ECR
+        run: |
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          if [ -z "$REGISTRY" ]; then
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          fi
+          echo "Pushing backend Docker image to $REGISTRY"
+          docker push "$REGISTRY/backend:${{ github.sha }}"
+          docker push "$REGISTRY/backend:latest"
+
       - name: Deploy to Amazon EKS
         run: |
           exec > >(tee -a diagnostics.log) 2>&1
@@ -263,8 +279,14 @@ jobs:
           echo "=== KUBERNETES NODES ==="
           kubectl get nodes -o wide || true
 
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          if [ -z "$REGISTRY" ]; then
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          fi
+
           cd k8s
-          kustomize edit set image backend=${{ steps.login-ecr.outputs.registry }}/backend:${{ github.sha }}
+          kustomize edit set image backend="$REGISTRY/backend:${{ github.sha }}"
           kustomize build | kubectl apply --validate=false -f -
 
           echo "=== CHECKING ROLLOUT STATUS ==="

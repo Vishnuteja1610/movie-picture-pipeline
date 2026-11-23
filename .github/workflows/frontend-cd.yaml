@@ -129,16 +129,28 @@ jobs:
 
       - name: Build Docker Image
         run: |
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          if [ -z "$REGISTRY" ]; then
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          fi
+          echo "Building frontend Docker image using registry: $REGISTRY"
           docker build \
             --build-arg REACT_APP_MOVIE_API_URL=${{ env.REACT_APP_MOVIE_API_URL }} \
-            --tag ${{ steps.login-ecr.outputs.registry }}/frontend:${{ github.sha }} \
-            --tag ${{ steps.login-ecr.outputs.registry }}/frontend:latest \
+            --tag "$REGISTRY/frontend:${{ github.sha }}" \
+            --tag "$REGISTRY/frontend:latest" \
             .
 
       - name: Push Docker Image to Amazon ECR
         run: |
-          docker push ${{ steps.login-ecr.outputs.registry }}/frontend:${{ github.sha }}
-          docker push ${{ steps.login-ecr.outputs.registry }}/frontend:latest
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          if [ -z "$REGISTRY" ]; then
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          fi
+          echo "Pushing frontend Docker image to $REGISTRY"
+          docker push "$REGISTRY/frontend:${{ github.sha }}"
+          docker push "$REGISTRY/frontend:latest"
 
       - name: Deploy to Amazon EKS
         run: |
@@ -150,8 +162,26 @@ jobs:
             kubectl delete node "$dead_node" 2>/dev/null || true
           done
 
+          echo "Waiting up to 300s for a Ready worker node..."
+          for i in $(seq 1 30); do
+            READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
+            if [ "$READY_NODES" -gt 0 ]; then
+              echo "Worker node is Ready ($READY_NODES ready)!"
+              kubectl get nodes -o wide
+              break
+            fi
+            echo "Waiting for worker node to be Ready ($i/30)..."
+            sleep 10
+          done
+
+          REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          if [ -z "$REGISTRY" ]; then
+            ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+            REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
+          fi
+
           cd k8s
-          kustomize edit set image frontend=${{ steps.login-ecr.outputs.registry }}/frontend:${{ github.sha }}
+          kustomize edit set image frontend="$REGISTRY/frontend:${{ github.sha }}"
           kustomize build | kubectl apply --validate=false -f -
 
           echo "=== CHECKING ROLLOUT STATUS ==="
