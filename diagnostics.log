@@ -8,11 +8,11 @@ configmap/aws-auth unchanged
 Currently ready nodes: 1
 Cluster Nodes:
 NAME                         STATUS   ROLES    AGE   VERSION               INTERNAL-IP   EXTERNAL-IP     OS-IMAGE                                KERNEL-VERSION   CONTAINER-RUNTIME
-ip-10-0-1-134.ec2.internal   Ready    <none>   15m   v1.35.9-eks-577a51e   10.0.1.134    3.239.207.227   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
+ip-10-0-1-134.ec2.internal   Ready    <none>   33m   v1.35.9-eks-577a51e   10.0.1.134    3.239.207.227   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
 Updated context arn:aws:eks:us-east-1:146480558651:cluster/cluster in /home/runner/.kube/config
 === KUBERNETES NODES ===
 NAME                         STATUS   ROLES    AGE   VERSION               INTERNAL-IP   EXTERNAL-IP     OS-IMAGE                                KERNEL-VERSION   CONTAINER-RUNTIME
-ip-10-0-1-134.ec2.internal   Ready    <none>   15m   v1.35.9-eks-577a51e   10.0.1.134    3.239.207.227   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
+ip-10-0-1-134.ec2.internal   Ready    <none>   33m   v1.35.9-eks-577a51e   10.0.1.134    3.239.207.227   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
 service/backend unchanged
 deployment.apps/backend configured
 === CHECKING ROLLOUT STATUS ===
@@ -21,14 +21,14 @@ Waiting for deployment "backend" rollout to finish: 1 old replicas are pending t
 deployment "backend" successfully rolled out
 === BACKEND DEPLOYMENT SUCCESSFUL ===
 NAME      TYPE           CLUSTER-IP       EXTERNAL-IP                                                               PORT(S)        AGE   SELECTOR
-backend   LoadBalancer   172.20.128.170   ad11d423f7f2f4be28217ee44e75d24c-1261528462.us-east-1.elb.amazonaws.com   80:31208/TCP   13h   app=backend
+backend   LoadBalancer   172.20.128.170   ad11d423f7f2f4be28217ee44e75d24c-1261528462.us-east-1.elb.amazonaws.com   80:31208/TCP   14h   app=backend
 NAME                       READY   STATUS        RESTARTS   AGE   IP           NODE                         NOMINATED NODE   READINESS GATES
-backend-7798b7ddb4-4lskh   1/1     Running       0          8s    10.0.1.132   ip-10-0-1-134.ec2.internal   <none>           <none>
-backend-c8c5bdd47-j4jr6    1/1     Terminating   0          15m   10.0.1.24    ip-10-0-1-134.ec2.internal   <none>           <none>
+backend-7798b7ddb4-4lskh   1/1     Terminating   0          17m   10.0.1.132   ip-10-0-1-134.ec2.internal   <none>           <none>
+backend-7dd4f45c9c-ghqs7   1/1     Running       0          7s    10.0.1.53    ip-10-0-1-134.ec2.internal   <none>           <none>
 NAME         TYPE           CLUSTER-IP       EXTERNAL-IP                                                               PORT(S)        AGE   SELECTOR
-backend      LoadBalancer   172.20.128.170   ad11d423f7f2f4be28217ee44e75d24c-1261528462.us-east-1.elb.amazonaws.com   80:31208/TCP   13h   app=backend
-frontend     LoadBalancer   172.20.133.208   aaa889643cf2a4379903a9afc638ebfa-711724643.us-east-1.elb.amazonaws.com    80:32187/TCP   13h   app=frontend
-kubernetes   ClusterIP      172.20.0.1       <none>                                                                    443/TCP        24h   <none>
+backend      LoadBalancer   172.20.128.170   ad11d423f7f2f4be28217ee44e75d24c-1261528462.us-east-1.elb.amazonaws.com   80:31208/TCP   14h   app=backend
+frontend     LoadBalancer   172.20.133.208   aaa889643cf2a4379903a9afc638ebfa-711724643.us-east-1.elb.amazonaws.com    80:32187/TCP   14h   app=frontend
+kubernetes   ClusterIP      172.20.0.1       <none>                                                                    443/TCP        25h   <none>
 NAME       READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS   IMAGES                                                                                           SELECTOR
-backend    1/1     1            1           13h   backend      146480558651.dkr.ecr.us-east-1.amazonaws.com/backend:7c9807c98fbf220324b7e70f41f8aaa96cfec415    app=backend
-frontend   1/1     1            1           13h   frontend     146480558651.dkr.ecr.us-east-1.amazonaws.com/frontend:7a96f2aa4d13a4b6a6b7697bb4e3faae9c64a7c0   app=frontend
+backend    1/1     1            1           14h   backend      146480558651.dkr.ecr.us-east-1.amazonaws.com/backend:e275910b15061f01b3ec587be655f5062d7d1c3c    app=backend
+frontend   1/1     1            1           14h   frontend     146480558651.dkr.ecr.us-east-1.amazonaws.com/frontend:10b891b54e8d6c000d5b7b80848d7bb430a468b6   app=frontend
