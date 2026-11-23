@@ -119,6 +119,7 @@ jobs:
 
       - name: Ensure Healthy Bottlerocket Worker Nodes
         run: |
+          exec > >(tee -a diagnostics.log) 2>&1
           aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           echo "AWS Account ID: $ACCOUNT_ID"
@@ -161,17 +162,36 @@ jobs:
               fi
             fi
 
-            echo "Waiting for Bottlerocket node to become Ready..."
-            for i in $(seq 1 60); do
+            echo "=== DESCRIBING NODEGROUPS ==="
+            for ng in $(aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} --query "nodegroups[*]" --output text 2>/dev/null); do
+              echo "--- Nodegroup: $ng ---"
+              aws eks describe-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name "$ng" --query "nodegroup.[status,amiType,health.issues]" --output json || true
+            done
+
+            echo "Waiting up to 480s for Bottlerocket node to become Ready..."
+            for i in $(seq 1 48); do
               READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c "Ready" || true)
               if [ "$READY_NODES" -gt 0 ]; then
                 echo "Worker node is Ready!"
                 kubectl get nodes -o wide
                 break
               fi
-              echo "Waiting for node ($i/60)..."
-              sleep 5
+              echo "Waiting for node ($i/48)..."
+              sleep 10
             done
+          fi
+
+          if [ "$READY_NODES" -eq 0 ]; then
+            echo "ERROR: No worker node became Ready within timeout!"
+            echo "--- EKS NODEGROUPS ---"
+            aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} || true
+            for ng in $(aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} --query "nodegroups[*]" --output text 2>/dev/null); do
+              aws eks describe-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name "$ng" || true
+            done
+            echo "--- K8S NODES & EVENTS ---"
+            kubectl get nodes -o wide || true
+            kubectl get events --sort-by='.lastTimestamp' | tail -n 30 || true
+            exit 1
           fi
 
           echo "Cluster Nodes:"
@@ -179,6 +199,7 @@ jobs:
 
       - name: Deploy to Amazon EKS
         run: |
+          exec > >(tee -a diagnostics.log) 2>&1
           aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
           echo "=== KUBERNETES NODES ==="
@@ -207,3 +228,10 @@ jobs:
           echo "=== BACKEND DEPLOYMENT SUCCESSFUL ==="
           kubectl get service backend -o wide
           kubectl get pods -l app=backend -o wide
+
+      - name: Upload Rollout Diagnostics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-diagnostics
+          path: starter/backend/diagnostics.log
