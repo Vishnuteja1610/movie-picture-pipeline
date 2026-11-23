@@ -1,5 +1,8 @@
 name: Backend Continuous Deployment
 
+permissions:
+  contents: write
+
 on:
   push:
     branches:
@@ -231,6 +234,24 @@ jobs:
           echo "=== BACKEND DEPLOYMENT SUCCESSFUL ==="
           kubectl get service backend -o wide
           kubectl get pods -l app=backend -o wide
+
+      - name: Save Diagnostics
+        if: always()
+        run: |
+          if [ -f diagnostics.log ]; then
+            echo "### Rollout Diagnostics" >> $GITHUB_STEP_SUMMARY
+            echo '```text' >> $GITHUB_STEP_SUMMARY
+            tail -n 150 diagnostics.log >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git pull origin main --rebase || true
+            cp diagnostics.log $GITHUB_WORKSPACE/diagnostics.log || true
+            cd $GITHUB_WORKSPACE
+            git add diagnostics.log || true
+            git commit -m "chore(debug): capture live cluster diagnostics [skip ci]" || true
+            git push origin main || true
+          fi
 
       - name: Upload Rollout Diagnostics
         uses: actions/upload-artifact@v4
