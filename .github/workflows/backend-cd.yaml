@@ -140,7 +140,7 @@ jobs:
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           echo "AWS Account ID: $ACCOUNT_ID"
 
-          # 1. Ensure eks_cluster_role exists (required by EKS when creating node groups)
+          # 1. Ensure eks_cluster_role exists
           echo "Checking eks_cluster_role..."
           if ! aws iam get-role --role-name eks_cluster_role >/dev/null 2>&1; then
             echo "Recreating eks_cluster_role..."
@@ -166,7 +166,7 @@ jobs:
           # Wait 5 seconds for IAM propagation
           sleep 5
 
-          # 3. Authorize worker node role via EKS Access Entry (for API_AND_CONFIG_MAP mode)
+          # 3. Authorize worker node role via EKS Access Entry
           echo "Configuring EKS access entry for worker node role..."
           aws eks create-access-entry \
             --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
@@ -214,53 +214,54 @@ jobs:
               EXISTING_NGS=$(aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} --query "nodegroups[*]" --output text 2>/dev/null || true)
               echo "Existing nodegroups: $EXISTING_NGS"
 
-            STUCK_INSTANCES=$(aws ec2 describe-instances \
-              --filters "Name=tag:eks:nodegroup-name,Values=udacity-bottlerocket" "Name=instance-state-name,Values=running,pending" \
-              --query "Reservations[*].Instances[*].InstanceId" --output text 2>/dev/null || true)
-            echo "Stuck instances before cleanup: $STUCK_INSTANCES"
+              STUCK_INSTANCES=$(aws ec2 describe-instances \
+                --filters "Name=tag:eks:nodegroup-name,Values=udacity-bottlerocket" "Name=instance-state-name,Values=running,pending" \
+                --query "Reservations[*].Instances[*].InstanceId" --output text 2>/dev/null || true)
+              echo "Stuck instances before cleanup: $STUCK_INSTANCES"
 
-            if echo "$EXISTING_NGS" | grep -qw "udacity-bottlerocket"; then
-              echo "Zero ready nodes in cluster! Deleting stale nodegroup udacity-bottlerocket..."
-              aws eks delete-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket || true
-              echo "Waiting for stale nodegroup to be deleted..."
-              aws eks wait nodegroup-deleted --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket 2>/dev/null || sleep 60
+              if echo "$EXISTING_NGS" | grep -qw "udacity-bottlerocket"; then
+                echo "Zero ready nodes in cluster! Deleting stale nodegroup udacity-bottlerocket..."
+                aws eks delete-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket || true
+                echo "Waiting for stale nodegroup to be deleted..."
+                aws eks wait nodegroup-deleted --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket 2>/dev/null || sleep 60
+              fi
+
+              # Clean up old AL2023 node group if present
+              if echo "$EXISTING_NGS" | grep -qw "udacity"; then
+                echo "Deleting old node group 'udacity'..."
+                aws eks delete-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity 2>/dev/null || true
+              fi
+
+              # Terminate any leftover stuck instances
+              if [ -n "$STUCK_INSTANCES" ] && [ "$STUCK_INSTANCES" != "None" ]; then
+                echo "Terminating stuck instance(s): $STUCK_INSTANCES..."
+                aws ec2 terminate-instances --instance-ids $STUCK_INSTANCES 2>/dev/null || true
+              fi
+
+              echo "Ensuring EKS access entry for worker node role..."
+              aws eks delete-access-entry --cluster-name ${{ env.EKS_CLUSTER_NAME }} --principal-arn "arn:aws:iam::$ACCOUNT_ID:role/udacity-node-group" 2>/dev/null || true
+              aws eks create-access-entry \
+                --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
+                --principal-arn "arn:aws:iam::$ACCOUNT_ID:role/udacity-node-group" \
+                --type EC2_LINUX || true
+
+              SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=tag:Name,Values=udacity-public" --query "Subnets[0].SubnetId" --output text 2>/dev/null || true)
+              if [ -z "$SUBNET_ID" ] || [ "$SUBNET_ID" = "None" ]; then
+                SUBNET_ID=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.subnetIds[0]" --output text)
+              fi
+              echo "Creating fresh Bottlerocket node group 'udacity-bottlerocket' in subnet $SUBNET_ID..."
+              aws eks create-nodegroup \
+                --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
+                --nodegroup-name udacity-bottlerocket \
+                --scaling-config minSize=1,maxSize=1,desiredSize=1 \
+                --subnets "$SUBNET_ID" \
+                --instance-types t3.small \
+                --ami-type BOTTLEROCKET_x86_64 \
+                --node-role "arn:aws:iam::$ACCOUNT_ID:role/udacity-node-group" || true
+
+              echo "Waiting for fresh nodegroup to become ACTIVE..."
+              aws eks wait nodegroup-active --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket 2>/dev/null || sleep 60
             fi
-
-            # Clean up old AL2023 node group if present
-            if echo "$EXISTING_NGS" | grep -qw "udacity"; then
-              echo "Deleting old node group 'udacity'..."
-              aws eks delete-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity 2>/dev/null || true
-            fi
-
-            # Terminate any leftover stuck instances
-            if [ -n "$STUCK_INSTANCES" ] && [ "$STUCK_INSTANCES" != "None" ]; then
-              echo "Terminating stuck instance(s): $STUCK_INSTANCES..."
-              aws ec2 terminate-instances --instance-ids $STUCK_INSTANCES 2>/dev/null || true
-            fi
-
-            echo "Ensuring EKS access entry for worker node role..."
-            aws eks delete-access-entry --cluster-name ${{ env.EKS_CLUSTER_NAME }} --principal-arn "arn:aws:iam::$ACCOUNT_ID:role/udacity-node-group" 2>/dev/null || true
-            aws eks create-access-entry \
-              --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
-              --principal-arn "arn:aws:iam::$ACCOUNT_ID:role/udacity-node-group" \
-              --type EC2_LINUX || true
-
-            SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=tag:Name,Values=udacity-public" --query "Subnets[0].SubnetId" --output text 2>/dev/null || true)
-            if [ -z "$SUBNET_ID" ] || [ "$SUBNET_ID" = "None" ]; then
-              SUBNET_ID=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.subnetIds[0]" --output text)
-            fi
-            echo "Creating fresh Bottlerocket node group 'udacity-bottlerocket' in subnet $SUBNET_ID..."
-            aws eks create-nodegroup \
-              --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
-              --nodegroup-name udacity-bottlerocket \
-              --scaling-config minSize=1,maxSize=1,desiredSize=1 \
-              --subnets "$SUBNET_ID" \
-              --instance-types t3.small \
-              --ami-type BOTTLEROCKET_x86_64 \
-              --node-role "arn:aws:iam::$ACCOUNT_ID:role/udacity-node-group" || true
-
-            echo "Waiting for fresh nodegroup to become ACTIVE..."
-            aws eks wait nodegroup-active --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket 2>/dev/null || sleep 60
 
             echo "=== DESCRIBING NODEGROUPS ==="
             for ng in $(aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} --query "nodegroups[*]" --output text 2>/dev/null); do
