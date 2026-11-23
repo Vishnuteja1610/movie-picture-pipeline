@@ -144,7 +144,10 @@ jobs:
             echo "Existing nodegroups: $EXISTING_NGS"
 
             if ! echo "$EXISTING_NGS" | grep -qw "udacity-bottlerocket"; then
-              SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=tag:Name,Values=udacity-public" --query "Subnets[0].SubnetId" --output text)
+              SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=tag:Name,Values=udacity-public" --query "Subnets[0].SubnetId" --output text 2>/dev/null || true)
+              if [ -z "$SUBNET_ID" ] || [ "$SUBNET_ID" = "None" ]; then
+                SUBNET_ID=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.subnetIds[0]" --output text)
+              fi
               echo "Creating Bottlerocket node group 'udacity-bottlerocket' in subnet $SUBNET_ID..."
               aws eks create-nodegroup \
                 --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
@@ -235,3 +238,4 @@ jobs:
         with:
           name: backend-diagnostics
           path: starter/backend/diagnostics.log
+          if-no-files-found: ignore

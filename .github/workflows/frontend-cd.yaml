@@ -162,3 +162,11 @@ jobs:
           echo "=== FRONTEND DEPLOYMENT SUCCESSFUL ==="
           kubectl get service frontend -o wide
           kubectl get pods -l app=frontend -o wide
+
+      - name: Upload Rollout Diagnostics
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: frontend-diagnostics
+          path: starter/frontend/diagnostics.log
+          if-no-files-found: ignore
