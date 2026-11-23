@@ -4,141 +4,15 @@ Checking eks_cluster_role...
 Checking udacity-node-group role...
 Configuring EKS access entry for worker node role...
 Applying aws-auth ConfigMap...
-configmap/aws-auth unchanged
-Currently ready nodes: 0
-Existing nodegroups: udacity-bottlerocket
-Stuck instances before cleanup: i-0f97ac7e9d38f0ec7
-Zero ready nodes in cluster! Deleting stale nodegroup udacity-bottlerocket...
-{
-    "nodegroup": {
-        "nodegroupName": "udacity-bottlerocket",
-        "nodegroupArn": "arn:aws:eks:us-east-1:146480558651:nodegroup/cluster/udacity-bottlerocket/82d10387-31b3-cf6b-9c37-dc91ffa3a9e7",
-        "clusterName": "cluster",
-        "version": "1.35",
-        "releaseVersion": "1.70.0-59b0684a",
-        "createdAt": "2026-11-23T06:18:33.956000+00:00",
-        "modifiedAt": "2026-11-23T13:36:04.490000+00:00",
-        "status": "DELETING",
-        "capacityType": "ON_DEMAND",
-        "scalingConfig": {
-            "minSize": 1,
-            "maxSize": 1,
-            "desiredSize": 1
-        },
-        "instanceTypes": [
-            "t3.small"
-        ],
-        "subnets": [
-            "subnet-0396b704fcfbaaf58"
-        ],
-        "amiType": "BOTTLEROCKET_x86_64",
-        "nodeRole": "arn:aws:iam::146480558651:role/udacity-node-group",
-        "labels": {},
-        "resources": {
-            "autoScalingGroups": [
-                {
-                    "name": "eks-udacity-bottlerocket-82d10387-31b3-cf6b-9c37-dc91ffa3a9e7"
-                }
-            ]
-        },
-        "diskSize": 20,
-        "health": {
-            "issues": []
-        },
-        "updateConfig": {
-            "maxUnavailable": 1
-        },
-        "tags": {}
-    }
-}
-Waiting for stale nodegroup to be deleted...
-Deleting old node group 'udacity'...
-Terminating stuck instance(s): i-0f97ac7e9d38f0ec7...
-{
-    "TerminatingInstances": [
-        {
-            "InstanceId": "i-0f97ac7e9d38f0ec7",
-            "CurrentState": {
-                "Code": 48,
-                "Name": "terminated"
-            },
-            "PreviousState": {
-                "Code": 48,
-                "Name": "terminated"
-            }
-        }
-    ]
-}
-Ensuring EKS access entry for worker node role...
-{
-    "accessEntry": {
-        "clusterName": "cluster",
-        "principalArn": "arn:aws:iam::146480558651:role/udacity-node-group",
-        "kubernetesGroups": [
-            "system:nodes"
-        ],
-        "accessEntryArn": "arn:aws:eks:us-east-1:146480558651:access-entry/cluster/role/146480558651/udacity-node-group/4cd10450-a862-fd48-64e8-e6a6fe41b821",
-        "createdAt": "2026-11-23T13:38:39.546000+00:00",
-        "modifiedAt": "2026-11-23T13:38:39.546000+00:00",
-        "tags": {},
-        "username": "system:node:{{EC2PrivateDNSName}}",
-        "type": "EC2_LINUX"
-    }
-}
-Creating fresh Bottlerocket node group 'udacity-bottlerocket' in subnet subnet-0396b704fcfbaaf58...
-{
-    "nodegroup": {
-        "nodegroupName": "udacity-bottlerocket",
-        "nodegroupArn": "arn:aws:eks:us-east-1:146480558651:nodegroup/cluster/udacity-bottlerocket/b6d10450-aba9-d0a5-fb27-7a5161aeef79",
-        "clusterName": "cluster",
-        "version": "1.35",
-        "releaseVersion": "1.70.0-59b0684a",
-        "createdAt": "2026-11-23T13:38:42.334000+00:00",
-        "modifiedAt": "2026-11-23T13:38:42.334000+00:00",
-        "status": "CREATING",
-        "capacityType": "ON_DEMAND",
-        "scalingConfig": {
-            "minSize": 1,
-            "maxSize": 1,
-            "desiredSize": 1
-        },
-        "instanceTypes": [
-            "t3.small"
-        ],
-        "subnets": [
-            "subnet-0396b704fcfbaaf58"
-        ],
-        "amiType": "BOTTLEROCKET_x86_64",
-        "nodeRole": "arn:aws:iam::146480558651:role/udacity-node-group",
-        "diskSize": 20,
-        "health": {
-            "issues": []
-        },
-        "updateConfig": {
-            "maxUnavailable": 1
-        },
-        "tags": {}
-    }
-}
-Waiting for fresh nodegroup to become ACTIVE...
-=== DESCRIBING NODEGROUPS ===
---- Nodegroup: udacity-bottlerocket ---
-[
-    "ACTIVE",
-    "BOTTLEROCKET_x86_64",
-    []
-]
-Waiting up to 480s for Bottlerocket node to become Ready...
-Worker node is Ready!
-NAME                         STATUS   ROLES    AGE   VERSION               INTERNAL-IP   EXTERNAL-IP     OS-IMAGE                                KERNEL-VERSION   CONTAINER-RUNTIME
-ip-10-0-1-121.ec2.internal   Ready    <none>   69s   v1.35.9-eks-577a51e   10.0.1.121    32.198.26.209   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
+configmap/aws-auth configured
+Currently ready nodes: 1
 Cluster Nodes:
 NAME                         STATUS   ROLES    AGE   VERSION               INTERNAL-IP   EXTERNAL-IP     OS-IMAGE                                KERNEL-VERSION   CONTAINER-RUNTIME
-ip-10-0-1-121.ec2.internal   Ready    <none>   70s   v1.35.9-eks-577a51e   10.0.1.121    32.198.26.209   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
+ip-10-0-1-121.ec2.internal   Ready    <none>   17m   v1.35.9-eks-577a51e   10.0.1.121    32.198.26.209   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
 Updated context arn:aws:eks:us-east-1:146480558651:cluster/cluster in /home/runner/.kube/config
 === KUBERNETES NODES ===
-NAME                         STATUS   ROLES    AGE    VERSION               INTERNAL-IP   EXTERNAL-IP     OS-IMAGE                                KERNEL-VERSION   CONTAINER-RUNTIME
-ip-10-0-1-121.ec2.internal   Ready    <none>   102s   v1.35.9-eks-577a51e   10.0.1.121    32.198.26.209   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
+NAME                         STATUS   ROLES    AGE   VERSION               INTERNAL-IP   EXTERNAL-IP     OS-IMAGE                                KERNEL-VERSION   CONTAINER-RUNTIME
+ip-10-0-1-121.ec2.internal   Ready    <none>   18m   v1.35.9-eks-577a51e   10.0.1.121    32.198.26.209   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
 service/backend unchanged
 deployment.apps/backend configured
 === CHECKING ROLLOUT STATUS ===
@@ -148,13 +22,13 @@ deployment "backend" successfully rolled out
 === BACKEND DEPLOYMENT SUCCESSFUL ===
 NAME      TYPE           CLUSTER-IP       EXTERNAL-IP                                                               PORT(S)        AGE   SELECTOR
 backend   LoadBalancer   172.20.128.170   ad11d423f7f2f4be28217ee44e75d24c-1261528462.us-east-1.elb.amazonaws.com   80:31208/TCP   21h   app=backend
-NAME                       READY   STATUS        RESTARTS   AGE    IP           NODE                         NOMINATED NODE   READINESS GATES
-backend-568bc6f557-gvsxp   1/1     Running       0          8s     10.0.1.45    ip-10-0-1-121.ec2.internal   <none>           <none>
-backend-b5697ccf8-4gnr7    1/1     Terminating   0          128m   10.0.1.107   ip-10-0-1-121.ec2.internal   <none>           <none>
+NAME                       READY   STATUS        RESTARTS   AGE   IP          NODE                         NOMINATED NODE   READINESS GATES
+backend-568bc6f557-gvsxp   1/1     Terminating   0          17m   10.0.1.45   ip-10-0-1-121.ec2.internal   <none>           <none>
+backend-66dcc6b474-f4l9r   1/1     Running       0          8s    10.0.1.7    ip-10-0-1-121.ec2.internal   <none>           <none>
 NAME         TYPE           CLUSTER-IP       EXTERNAL-IP                                                               PORT(S)        AGE   SELECTOR
 backend      LoadBalancer   172.20.128.170   ad11d423f7f2f4be28217ee44e75d24c-1261528462.us-east-1.elb.amazonaws.com   80:31208/TCP   21h   app=backend
-frontend     LoadBalancer   172.20.133.208   aaa889643cf2a4379903a9afc638ebfa-711724643.us-east-1.elb.amazonaws.com    80:32187/TCP   20h   app=frontend
-kubernetes   ClusterIP      172.20.0.1       <none>                                                                    443/TCP        31h   <none>
+frontend     LoadBalancer   172.20.133.208   aaa889643cf2a4379903a9afc638ebfa-711724643.us-east-1.elb.amazonaws.com    80:32187/TCP   21h   app=frontend
+kubernetes   ClusterIP      172.20.0.1       <none>                                                                    443/TCP        32h   <none>
 NAME       READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS   IMAGES                                                                                           SELECTOR
-backend    1/1     1            1           21h   backend      146480558651.dkr.ecr.us-east-1.amazonaws.com/backend:6593af511ca2260eeea47c23a939503771441bbe    app=backend
-frontend   1/1     1            1           20h   frontend     146480558651.dkr.ecr.us-east-1.amazonaws.com/frontend:1e816536d7493408718064b873bd9968544828a5   app=frontend
+backend    1/1     1            1           21h   backend      146480558651.dkr.ecr.us-east-1.amazonaws.com/backend:a8f5e89ffaa8bb29613259de3ff22572abd30ffe    app=backend
+frontend   1/1     1            1           21h   frontend     146480558651.dkr.ecr.us-east-1.amazonaws.com/frontend:a8f5e89ffaa8bb29613259de3ff22572abd30ffe   app=frontend
