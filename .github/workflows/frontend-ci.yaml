@@ -1,12 +1,6 @@
 name: Frontend Continuous Integration
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'starter/frontend/**'
-      - '.github/workflows/frontend-ci.yaml'
   pull_request:
     branches:
       - main
@@ -73,6 +67,21 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Setup NodeJS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18.14'
+          cache: 'npm'
+          cache-dependency-path: starter/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        env:
+          CI: true
+        run: npm test
 
       - name: Build Docker Image
         run: |
