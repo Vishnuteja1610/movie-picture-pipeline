@@ -2,6 +2,11 @@ name: Deploy Infrastructure
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/infra-deploy.yaml'
 
 env:
   AWS_REGION: us-east-1
