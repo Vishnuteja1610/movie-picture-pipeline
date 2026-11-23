@@ -148,6 +148,8 @@ jobs:
             ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
             REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           fi
+          echo "Logging in to Amazon ECR via AWS CLI..."
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin "$REGISTRY"
           echo "Pushing frontend Docker image to $REGISTRY"
           docker push "$REGISTRY/frontend:${{ github.sha }}"
           docker push "$REGISTRY/frontend:latest"
@@ -240,14 +242,6 @@ jobs:
             echo "--- DEPLOYMENTS ---"
             kubectl get deployments -o wide 2>&1 || true
           } > "$GITHUB_WORKSPACE/diagnostics.log"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull origin main --rebase || true
-          cd "$GITHUB_WORKSPACE"
-          git add diagnostics.log || true
-          git commit -m "chore(debug): capture live cluster diagnostics [skip ci]" || true
-          git push origin main || true
 
       - name: Upload Rollout Diagnostics
         uses: actions/upload-artifact@v4

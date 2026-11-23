@@ -277,6 +277,8 @@ jobs:
             ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
             REGISTRY="${ACCOUNT_ID}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           fi
+          echo "Logging in to Amazon ECR via AWS CLI..."
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin "$REGISTRY"
           echo "Pushing backend Docker image to $REGISTRY"
           docker push "$REGISTRY/backend:${{ github.sha }}"
           docker push "$REGISTRY/backend:latest"
@@ -336,14 +338,6 @@ jobs:
             echo '```text' >> $GITHUB_STEP_SUMMARY
             tail -n 150 diagnostics.log >> $GITHUB_STEP_SUMMARY
             echo '```' >> $GITHUB_STEP_SUMMARY
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git pull origin main --rebase || true
-            cp diagnostics.log $GITHUB_WORKSPACE/diagnostics.log || true
-            cd $GITHUB_WORKSPACE
-            git add diagnostics.log || true
-            git commit -m "chore(debug): capture live cluster diagnostics [skip ci]" || true
-            git push origin main || true
           fi
 
       - name: Upload Rollout Diagnostics
