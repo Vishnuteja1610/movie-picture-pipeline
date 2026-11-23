@@ -144,6 +144,12 @@ jobs:
         run: |
           aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
+          # Clean up any stale NotReady nodes that no longer exist
+          for dead_node in $(kubectl get nodes --no-headers 2>/dev/null | awk '$2 ~ /NotReady/ {print $1}'); do
+            echo "Cleaning up stale NotReady node: $dead_node"
+            kubectl delete node "$dead_node" 2>/dev/null || true
+          done
+
           cd k8s
           kustomize edit set image frontend=${{ steps.login-ecr.outputs.registry }}/frontend:${{ github.sha }}
           kustomize build | kubectl apply --validate=false -f -

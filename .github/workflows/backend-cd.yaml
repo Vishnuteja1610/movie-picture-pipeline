@@ -164,15 +164,40 @@ jobs:
           echo "Applying aws-auth ConfigMap..."
           sed "s/ACCOUNT_ID/$ACCOUNT_ID/g" $GITHUB_WORKSPACE/setup/aws-auth-patch.yaml | kubectl apply -f - || true
 
-          # 3. Check for Ready nodes
-          READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c "Ready" || true)
+          # 3. Clean up any stale NotReady nodes that no longer exist
+          for dead_node in $(kubectl get nodes --no-headers 2>/dev/null | awk '$2 ~ /NotReady/ {print $1}'); do
+            echo "Cleaning up stale NotReady node: $dead_node"
+            kubectl delete node "$dead_node" 2>/dev/null || true
+          done
+
+          # 4. Check for actually Ready nodes
+          READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
           echo "Currently ready nodes: $READY_NODES"
 
-          if [ "$READY_NODES" -eq 0 ]; then
+          FINAL_READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
+          if [ "$FINAL_READY_NODES" -eq 0 ]; then
             EXISTING_NGS=$(aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} --query "nodegroups[*]" --output text 2>/dev/null || true)
             echo "Existing nodegroups: $EXISTING_NGS"
 
-            if ! echo "$EXISTING_NGS" | grep -qw "udacity-bottlerocket"; then
+            NG_STATUS=""
+            if echo "$EXISTING_NGS" | grep -qw "udacity-bottlerocket"; then
+              NG_STATUS=$(aws eks describe-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket --query "nodegroup.status" --output text 2>/dev/null || true)
+              echo "Existing udacity-bottlerocket status: $NG_STATUS"
+              if [ "$NG_STATUS" = "DEGRADED" ] || [ "$NG_STATUS" = "CREATE_FAILED" ]; then
+                echo "Deleting broken nodegroup udacity-bottlerocket..."
+                aws eks delete-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket || true
+                aws eks wait nodegroup-deleted --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket 2>/dev/null || sleep 60
+                NG_STATUS="DELETED"
+              else
+                # Ensure scaling config is desired=1
+                aws eks update-nodegroup-config \
+                  --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
+                  --nodegroup-name udacity-bottlerocket \
+                  --scaling-config minSize=1,maxSize=1,desiredSize=1 2>/dev/null || true
+              fi
+            fi
+
+            if ! echo "$EXISTING_NGS" | grep -qw "udacity-bottlerocket" || [ "$NG_STATUS" = "DELETED" ]; then
               SUBNET_ID=$(aws ec2 describe-subnets --filters "Name=tag:Name,Values=udacity-public" --query "Subnets[0].SubnetId" --output text 2>/dev/null || true)
               if [ -z "$SUBNET_ID" ] || [ "$SUBNET_ID" = "None" ]; then
                 SUBNET_ID=$(aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --query "cluster.resourcesVpcConfig.subnetIds[0]" --output text)
@@ -202,7 +227,7 @@ jobs:
 
             echo "Waiting up to 480s for Bottlerocket node to become Ready..."
             for i in $(seq 1 48); do
-              READY_NODES=$(kubectl get nodes --no-headers 2>/dev/null | grep -c "Ready" || true)
+              READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
               if [ "$READY_NODES" -gt 0 ]; then
                 echo "Worker node is Ready!"
                 kubectl get nodes -o wide
@@ -213,7 +238,8 @@ jobs:
             done
           fi
 
-          if [ "$READY_NODES" -eq 0 ]; then
+          FINAL_READY_NODES=$(kubectl get nodes -o jsonpath='{range .items[*]}{.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' 2>/dev/null | grep -cx "True" || true)
+          if [ "$FINAL_READY_NODES" -eq 0 ]; then
             echo "ERROR: No worker node became Ready within timeout!"
             echo "--- EKS NODEGROUPS ---"
             aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} || true
