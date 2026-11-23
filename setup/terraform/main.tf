@@ -157,6 +157,10 @@ resource "aws_eks_cluster" "main" {
     bootstrap_cluster_creator_admin_permissions = true
   }
   depends_on = [aws_iam_role_policy_attachment.eks_cluster, aws_iam_role_policy_attachment.eks_service]
+
+  lifecycle {
+    ignore_changes = [vpc_config.0.subnet_ids]
+  }
 }
 
 
@@ -218,7 +222,7 @@ resource "aws_eks_node_group" "main" {
   ]
 
   lifecycle {
-    ignore_changes = [scaling_config.0.desired_size]
+    ignore_changes = [scaling_config.0.desired_size, subnet_ids]
   }
 }
 
