@@ -7,28 +7,113 @@ Applying aws-auth ConfigMap...
 configmap/aws-auth unchanged
 Currently ready nodes: 1
 Cluster Nodes:
-NAME                         STATUS   ROLES    AGE   VERSION               INTERNAL-IP   EXTERNAL-IP     OS-IMAGE                                KERNEL-VERSION   CONTAINER-RUNTIME
-ip-10-0-1-134.ec2.internal   Ready    <none>   33m   v1.35.9-eks-577a51e   10.0.1.134    3.239.207.227   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
+NAME                         STATUS                        ROLES    AGE     VERSION               INTERNAL-IP   EXTERNAL-IP     OS-IMAGE                                KERNEL-VERSION   CONTAINER-RUNTIME
+ip-10-0-1-134.ec2.internal   NotReady,SchedulingDisabled   <none>   5h13m   v1.35.9-eks-577a51e   10.0.1.134    3.239.207.227   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
 Updated context arn:aws:eks:us-east-1:146480558651:cluster/cluster in /home/runner/.kube/config
 === KUBERNETES NODES ===
-NAME                         STATUS   ROLES    AGE   VERSION               INTERNAL-IP   EXTERNAL-IP     OS-IMAGE                                KERNEL-VERSION   CONTAINER-RUNTIME
-ip-10-0-1-134.ec2.internal   Ready    <none>   33m   v1.35.9-eks-577a51e   10.0.1.134    3.239.207.227   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
+NAME                         STATUS                        ROLES    AGE     VERSION               INTERNAL-IP   EXTERNAL-IP     OS-IMAGE                                KERNEL-VERSION   CONTAINER-RUNTIME
+ip-10-0-1-134.ec2.internal   NotReady,SchedulingDisabled   <none>   5h13m   v1.35.9-eks-577a51e   10.0.1.134    3.239.207.227   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
 service/backend unchanged
 deployment.apps/backend configured
 === CHECKING ROLLOUT STATUS ===
 Waiting for deployment "backend" rollout to finish: 1 old replicas are pending termination...
-Waiting for deployment "backend" rollout to finish: 1 old replicas are pending termination...
-deployment "backend" successfully rolled out
-=== BACKEND DEPLOYMENT SUCCESSFUL ===
-NAME      TYPE           CLUSTER-IP       EXTERNAL-IP                                                               PORT(S)        AGE   SELECTOR
-backend   LoadBalancer   172.20.128.170   ad11d423f7f2f4be28217ee44e75d24c-1261528462.us-east-1.elb.amazonaws.com   80:31208/TCP   14h   app=backend
-NAME                       READY   STATUS        RESTARTS   AGE   IP           NODE                         NOMINATED NODE   READINESS GATES
-backend-7798b7ddb4-4lskh   1/1     Terminating   0          17m   10.0.1.132   ip-10-0-1-134.ec2.internal   <none>           <none>
-backend-7dd4f45c9c-ghqs7   1/1     Running       0          7s    10.0.1.53    ip-10-0-1-134.ec2.internal   <none>           <none>
-NAME         TYPE           CLUSTER-IP       EXTERNAL-IP                                                               PORT(S)        AGE   SELECTOR
-backend      LoadBalancer   172.20.128.170   ad11d423f7f2f4be28217ee44e75d24c-1261528462.us-east-1.elb.amazonaws.com   80:31208/TCP   14h   app=backend
-frontend     LoadBalancer   172.20.133.208   aaa889643cf2a4379903a9afc638ebfa-711724643.us-east-1.elb.amazonaws.com    80:32187/TCP   14h   app=frontend
-kubernetes   ClusterIP      172.20.0.1       <none>                                                                    443/TCP        25h   <none>
-NAME       READY   UP-TO-DATE   AVAILABLE   AGE   CONTAINERS   IMAGES                                                                                           SELECTOR
-backend    1/1     1            1           14h   backend      146480558651.dkr.ecr.us-east-1.amazonaws.com/backend:e275910b15061f01b3ec587be655f5062d7d1c3c    app=backend
-frontend   1/1     1            1           14h   frontend     146480558651.dkr.ecr.us-east-1.amazonaws.com/frontend:10b891b54e8d6c000d5b7b80848d7bb430a468b6   app=frontend
+error: timed out waiting for the condition
+=== ROLLOUT TIMEOUT DIAGNOSTICS ===
+--- NODES ---
+No resources found
+--- PODS ---
+NAMESPACE     NAME                        READY   STATUS    RESTARTS   AGE     IP       NODE     NOMINATED NODE   READINESS GATES
+default       backend-7dd4f45c9c-x8dmb    0/1     Pending   0          3h31m   <none>   <none>   <none>           <none>
+default       backend-b5697ccf8-4gnr7     0/1     Pending   0          5m3s    <none>   <none>   <none>           <none>
+default       frontend-77b468bb67-9c62r   0/1     Pending   0          3h31m   <none>   <none>   <none>           <none>
+kube-system   coredns-577755d76c-gfmr4    0/1     Pending   0          3h31m   <none>   <none>   <none>           <none>
+kube-system   coredns-577755d76c-lqqt9    0/1     Pending   0          3h31m   <none>   <none>   <none>           <none>
+--- BACKEND POD DETAILS ---
+Name:             backend-7dd4f45c9c-x8dmb
+Namespace:        default
+Priority:         0
+Service Account:  default
+Node:             <none>
+Labels:           app=backend
+                  pod-template-hash=7dd4f45c9c
+Annotations:      <none>
+Status:           Pending
+IP:               
+IPs:              <none>
+Controlled By:    ReplicaSet/backend-7dd4f45c9c
+Containers:
+  backend:
+    Image:        146480558651.dkr.ecr.us-east-1.amazonaws.com/backend:e275910b15061f01b3ec587be655f5062d7d1c3c
+    Port:         5000/TCP
+    Host Port:    0/TCP
+    Environment:  <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-cp9m4 (ro)
+Conditions:
+  Type           Status
+  PodScheduled   False 
+Volumes:
+  kube-api-access-cp9m4:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+
+
+Name:             backend-b5697ccf8-4gnr7
+Namespace:        default
+Priority:         0
+Service Account:  default
+Node:             <none>
+Labels:           app=backend
+                  pod-template-hash=b5697ccf8
+Annotations:      <none>
+Status:           Pending
+IP:               
+IPs:              <none>
+Controlled By:    ReplicaSet/backend-b5697ccf8
+Containers:
+  backend:
+    Image:        146480558651.dkr.ecr.us-east-1.amazonaws.com/backend:eb1742bcf2c9d19ce494df6c2e03b7f819765e33
+    Port:         5000/TCP
+    Host Port:    0/TCP
+    Environment:  <none>
+    Mounts:
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-c6l9w (ro)
+Conditions:
+  Type           Status
+  PodScheduled   False 
+Volumes:
+  kube-api-access-c6l9w:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   BestEffort
+Node-Selectors:              <none>
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+--- BACKEND POD LOGS ---
+--- CLUSTER RECENT EVENTS ---
+LAST SEEN   TYPE      REASON                    OBJECT                            MESSAGE
+6m27s       Warning   FailedScheduling          pod/frontend-77b468bb67-9c62r     0/1 nodes are available: 1 node(s) were unschedulable. no new claims to deallocate, preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.
+5m27s       Warning   FailedScheduling          pod/backend-7dd4f45c9c-x8dmb      0/1 nodes are available: 1 node(s) were unschedulable. no new claims to deallocate, preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.
+5m7s        Warning   FailedScheduling          pod/backend-b5697ccf8-4gnr7       0/1 nodes are available: 1 node(s) were unschedulable. no new claims to deallocate, preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.
+5m7s        Normal    SuccessfulCreate          replicaset/backend-b5697ccf8      Created pod: backend-b5697ccf8-4gnr7
+5m7s        Normal    ScalingReplicaSet         deployment/backend                Scaled up replica set backend-b5697ccf8 from 0 to 1
+4m46s       Normal    DeletingNode              node/ip-10-0-1-134.ec2.internal   Deleting node ip-10-0-1-134.ec2.internal because it does not exist in the cloud provider
+4m41s       Normal    RemovingNode              node/ip-10-0-1-134.ec2.internal   Node ip-10-0-1-134.ec2.internal event: Removing Node ip-10-0-1-134.ec2.internal from Controller
+4m30s       Normal    EnsuringLoadBalancer      service/backend                   Ensuring load balancer
+4m30s       Warning   UnAvailableLoadBalancer   service/backend                   There are no available nodes for LoadBalancer
+4m28s       Normal    EnsuredLoadBalancer       service/backend                   Ensured load balancer
+4m28s       Normal    EnsuringLoadBalancer      service/frontend                  Ensuring load balancer
+4m28s       Warning   UnAvailableLoadBalancer   service/frontend                  There are no available nodes for LoadBalancer
+4m26s       Normal    EnsuredLoadBalancer       service/frontend                  Ensured load balancer
+8s          Warning   FailedScheduling          pod/backend-7dd4f45c9c-x8dmb      no nodes available to schedule pods
+2s          Warning   FailedScheduling          pod/frontend-77b468bb67-9c62r     no nodes available to schedule pods
