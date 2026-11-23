@@ -133,10 +133,10 @@ jobs:
             aws iam create-role \
               --role-name udacity-node-group \
               --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}' || true
-            aws iam attach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy" || true
-            aws iam attach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy" || true
-            aws iam attach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly" || true
           fi
+          aws iam attach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy" 2>/dev/null || true
+          aws iam attach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy" 2>/dev/null || true
+          aws iam attach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly" 2>/dev/null || true
 
           # Wait 5 seconds for IAM propagation
           sleep 5
@@ -170,22 +170,29 @@ jobs:
             if echo "$EXISTING_NGS" | grep -qw "udacity-bottlerocket"; then
               NG_STATUS=$(aws eks describe-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket --query "nodegroup.status" --output text 2>/dev/null || true)
               echo "Existing udacity-bottlerocket status: $NG_STATUS"
-              if [ "$NG_STATUS" = "DEGRADED" ] || [ "$NG_STATUS" = "CREATE_FAILED" ]; then
-                echo "Deleting broken nodegroup udacity-bottlerocket..."
+
+              ASG_NAME=$(aws eks describe-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket --query "nodegroup.resources.autoScalingGroups[0].name" --output text 2>/dev/null || true)
+              echo "Associated ASG: $ASG_NAME"
+              if [ -n "$ASG_NAME" ] && [ "$ASG_NAME" != "None" ]; then
+                echo "=== ASG SCALING ACTIVITIES ==="
+                aws autoscaling describe-scaling-activities --auto-scaling-group-name "$ASG_NAME" --max-items 3 --query "Activities[*].[StatusCode,StatusMessage]" --output json 2>/dev/null || true
+                echo "Resuming all ASG processes..."
+                aws autoscaling resume-processes --auto-scaling-group-name "$ASG_NAME" 2>/dev/null || true
+                aws autoscaling set-desired-capacity --auto-scaling-group-name "$ASG_NAME" --desired-capacity 1 2>/dev/null || true
+              fi
+
+              RUNNING_INSTANCES=$(aws ec2 describe-instances \
+                --filters "Name=tag:eks:nodegroup-name,Values=udacity-bottlerocket" "Name=instance-state-name,Values=running,pending" \
+                --query "Reservations[*].Instances[*].InstanceId" --output text 2>/dev/null || true)
+              echo "Running/pending EC2 instances for udacity-bottlerocket: $RUNNING_INSTANCES"
+
+              if [ "$NG_STATUS" = "DEGRADED" ] || [ "$NG_STATUS" = "CREATE_FAILED" ] || [ -z "$RUNNING_INSTANCES" ] || [ "$RUNNING_INSTANCES" = "None" ]; then
+                echo "Nodegroup has no running EC2 instances or is in bad state. Deleting and recreating..."
                 aws eks delete-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket || true
+                echo "Waiting for zombie nodegroup to be deleted..."
                 aws eks wait nodegroup-deleted --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket 2>/dev/null || sleep 60
                 NG_STATUS="DELETED"
-              else
-                # Ensure scaling config is desired=1
-                aws eks update-nodegroup-config \
-                  --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
-                  --nodegroup-name udacity-bottlerocket \
-                  --scaling-config minSize=1,maxSize=1,desiredSize=1 2>/dev/null || true
-                ASG_NAME=$(aws eks describe-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name udacity-bottlerocket --query "nodegroup.resources.autoScalingGroups[0].name" --output text 2>/dev/null || true)
-                if [ -n "$ASG_NAME" ] && [ "$ASG_NAME" != "None" ]; then
-                  echo "Ensuring ASG $ASG_NAME desired-capacity is 1..."
-                  aws autoscaling set-desired-capacity --auto-scaling-group-name "$ASG_NAME" --desired-capacity 1 2>/dev/null || true
-                fi
+                EXISTING_NGS=""
               fi
             fi
 
@@ -224,6 +231,13 @@ jobs:
                 echo "Worker node is Ready!"
                 kubectl get nodes -o wide
                 break
+              fi
+              if [ $((i % 6)) -eq 0 ]; then
+                echo "--- NODES CURRENT STATUS ($i/48) ---"
+                kubectl get nodes -o wide 2>/dev/null || true
+                aws ec2 describe-instances \
+                  --filters "Name=tag:eks:nodegroup-name,Values=udacity-bottlerocket" "Name=instance-state-name,Values=running,pending" \
+                  --query "Reservations[*].Instances[*].[InstanceId,State.Name,PublicIpAddress,PrivateIpAddress]" --output json 2>/dev/null || true
               fi
               echo "Waiting for node ($i/48)..."
               sleep 10
