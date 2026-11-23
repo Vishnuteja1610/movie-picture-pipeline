@@ -5,115 +5,162 @@ Checking udacity-node-group role...
 Configuring EKS access entry for worker node role...
 Applying aws-auth ConfigMap...
 configmap/aws-auth unchanged
-Currently ready nodes: 1
-Cluster Nodes:
-NAME                         STATUS                        ROLES    AGE     VERSION               INTERNAL-IP   EXTERNAL-IP     OS-IMAGE                                KERNEL-VERSION   CONTAINER-RUNTIME
-ip-10-0-1-134.ec2.internal   NotReady,SchedulingDisabled   <none>   5h13m   v1.35.9-eks-577a51e   10.0.1.134    3.239.207.227   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
-Updated context arn:aws:eks:us-east-1:146480558651:cluster/cluster in /home/runner/.kube/config
-=== KUBERNETES NODES ===
-NAME                         STATUS                        ROLES    AGE     VERSION               INTERNAL-IP   EXTERNAL-IP     OS-IMAGE                                KERNEL-VERSION   CONTAINER-RUNTIME
-ip-10-0-1-134.ec2.internal   NotReady,SchedulingDisabled   <none>   5h13m   v1.35.9-eks-577a51e   10.0.1.134    3.239.207.227   Bottlerocket OS 1.70.0 (aws-k8s-1.35)   6.12.115         containerd://2.3.7+bottlerocket
-service/backend unchanged
-deployment.apps/backend configured
-=== CHECKING ROLLOUT STATUS ===
-Waiting for deployment "backend" rollout to finish: 1 old replicas are pending termination...
-error: timed out waiting for the condition
-=== ROLLOUT TIMEOUT DIAGNOSTICS ===
---- NODES ---
+Currently ready nodes: 0
+Existing nodegroups: udacity-bottlerocket
+Existing udacity-bottlerocket status: ACTIVE
+{
+    "update": {
+        "id": "3b63659b-c1cc-3a38-8824-10a5320d8b79",
+        "status": "InProgress",
+        "type": "ConfigUpdate",
+        "params": [
+            {
+                "type": "MinSize",
+                "value": "1"
+            },
+            {
+                "type": "MaxSize",
+                "value": "1"
+            },
+            {
+                "type": "DesiredSize",
+                "value": "1"
+            }
+        ],
+        "createdAt": "2026-11-23T12:09:27.468000+00:00",
+        "errors": []
+    }
+}
+Ensuring ASG eks-udacity-bottlerocket-82d10387-31b3-cf6b-9c37-dc91ffa3a9e7 desired-capacity is 1...
+=== DESCRIBING NODEGROUPS ===
+--- Nodegroup: udacity-bottlerocket ---
+[
+    "UPDATING",
+    "BOTTLEROCKET_x86_64",
+    []
+]
+Waiting up to 480s for Bottlerocket node to become Ready...
+Waiting for node (1/48)...
+Waiting for node (2/48)...
+Waiting for node (3/48)...
+Waiting for node (4/48)...
+Waiting for node (5/48)...
+Waiting for node (6/48)...
+Waiting for node (7/48)...
+Waiting for node (8/48)...
+Waiting for node (9/48)...
+Waiting for node (10/48)...
+Waiting for node (11/48)...
+Waiting for node (12/48)...
+Waiting for node (13/48)...
+Waiting for node (14/48)...
+Waiting for node (15/48)...
+Waiting for node (16/48)...
+Waiting for node (17/48)...
+Waiting for node (18/48)...
+Waiting for node (19/48)...
+Waiting for node (20/48)...
+Waiting for node (21/48)...
+Waiting for node (22/48)...
+Waiting for node (23/48)...
+Waiting for node (24/48)...
+Waiting for node (25/48)...
+Waiting for node (26/48)...
+Waiting for node (27/48)...
+Waiting for node (28/48)...
+Waiting for node (29/48)...
+Waiting for node (30/48)...
+Waiting for node (31/48)...
+Waiting for node (32/48)...
+Waiting for node (33/48)...
+Waiting for node (34/48)...
+Waiting for node (35/48)...
+Waiting for node (36/48)...
+Waiting for node (37/48)...
+Waiting for node (38/48)...
+Waiting for node (39/48)...
+Waiting for node (40/48)...
+Waiting for node (41/48)...
+Waiting for node (42/48)...
+Waiting for node (43/48)...
+Waiting for node (44/48)...
+Waiting for node (45/48)...
+Waiting for node (46/48)...
+Waiting for node (47/48)...
+Waiting for node (48/48)...
+ERROR: No worker node became Ready within timeout!
+--- EKS NODEGROUPS ---
+{
+    "nodegroups": [
+        "udacity-bottlerocket"
+    ]
+}
+{
+    "nodegroup": {
+        "nodegroupName": "udacity-bottlerocket",
+        "nodegroupArn": "arn:aws:eks:us-east-1:146480558651:nodegroup/cluster/udacity-bottlerocket/82d10387-31b3-cf6b-9c37-dc91ffa3a9e7",
+        "clusterName": "cluster",
+        "version": "1.35",
+        "releaseVersion": "1.70.0-59b0684a",
+        "createdAt": "2026-11-23T06:18:33.956000+00:00",
+        "modifiedAt": "2026-11-23T12:09:57.036000+00:00",
+        "status": "ACTIVE",
+        "capacityType": "ON_DEMAND",
+        "scalingConfig": {
+            "minSize": 1,
+            "maxSize": 1,
+            "desiredSize": 1
+        },
+        "instanceTypes": [
+            "t3.small"
+        ],
+        "subnets": [
+            "subnet-0396b704fcfbaaf58"
+        ],
+        "amiType": "BOTTLEROCKET_x86_64",
+        "nodeRole": "arn:aws:iam::146480558651:role/udacity-node-group",
+        "labels": {},
+        "resources": {
+            "autoScalingGroups": [
+                {
+                    "name": "eks-udacity-bottlerocket-82d10387-31b3-cf6b-9c37-dc91ffa3a9e7"
+                }
+            ]
+        },
+        "diskSize": 20,
+        "health": {
+            "issues": []
+        },
+        "updateConfig": {
+            "maxUnavailable": 1
+        },
+        "tags": {}
+    }
+}
+--- K8S NODES & EVENTS ---
 No resources found
---- PODS ---
-NAMESPACE     NAME                        READY   STATUS    RESTARTS   AGE     IP       NODE     NOMINATED NODE   READINESS GATES
-default       backend-7dd4f45c9c-x8dmb    0/1     Pending   0          3h31m   <none>   <none>   <none>           <none>
-default       backend-b5697ccf8-4gnr7     0/1     Pending   0          5m3s    <none>   <none>   <none>           <none>
-default       frontend-77b468bb67-9c62r   0/1     Pending   0          3h31m   <none>   <none>   <none>           <none>
-kube-system   coredns-577755d76c-gfmr4    0/1     Pending   0          3h31m   <none>   <none>   <none>           <none>
-kube-system   coredns-577755d76c-lqqt9    0/1     Pending   0          3h31m   <none>   <none>   <none>           <none>
---- BACKEND POD DETAILS ---
-Name:             backend-7dd4f45c9c-x8dmb
-Namespace:        default
-Priority:         0
-Service Account:  default
-Node:             <none>
-Labels:           app=backend
-                  pod-template-hash=7dd4f45c9c
-Annotations:      <none>
-Status:           Pending
-IP:               
-IPs:              <none>
-Controlled By:    ReplicaSet/backend-7dd4f45c9c
-Containers:
-  backend:
-    Image:        146480558651.dkr.ecr.us-east-1.amazonaws.com/backend:e275910b15061f01b3ec587be655f5062d7d1c3c
-    Port:         5000/TCP
-    Host Port:    0/TCP
-    Environment:  <none>
-    Mounts:
-      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-cp9m4 (ro)
-Conditions:
-  Type           Status
-  PodScheduled   False 
-Volumes:
-  kube-api-access-cp9m4:
-    Type:                    Projected (a volume that contains injected data from multiple sources)
-    TokenExpirationSeconds:  3607
-    ConfigMapName:           kube-root-ca.crt
-    Optional:                false
-    DownwardAPI:             true
-QoS Class:                   BestEffort
-Node-Selectors:              <none>
-Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
-                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
-
-
-Name:             backend-b5697ccf8-4gnr7
-Namespace:        default
-Priority:         0
-Service Account:  default
-Node:             <none>
-Labels:           app=backend
-                  pod-template-hash=b5697ccf8
-Annotations:      <none>
-Status:           Pending
-IP:               
-IPs:              <none>
-Controlled By:    ReplicaSet/backend-b5697ccf8
-Containers:
-  backend:
-    Image:        146480558651.dkr.ecr.us-east-1.amazonaws.com/backend:eb1742bcf2c9d19ce494df6c2e03b7f819765e33
-    Port:         5000/TCP
-    Host Port:    0/TCP
-    Environment:  <none>
-    Mounts:
-      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-c6l9w (ro)
-Conditions:
-  Type           Status
-  PodScheduled   False 
-Volumes:
-  kube-api-access-c6l9w:
-    Type:                    Projected (a volume that contains injected data from multiple sources)
-    TokenExpirationSeconds:  3607
-    ConfigMapName:           kube-root-ca.crt
-    Optional:                false
-    DownwardAPI:             true
-QoS Class:                   BestEffort
-Node-Selectors:              <none>
-Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
-                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
---- BACKEND POD LOGS ---
---- CLUSTER RECENT EVENTS ---
 LAST SEEN   TYPE      REASON                    OBJECT                            MESSAGE
-6m27s       Warning   FailedScheduling          pod/frontend-77b468bb67-9c62r     0/1 nodes are available: 1 node(s) were unschedulable. no new claims to deallocate, preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.
-5m27s       Warning   FailedScheduling          pod/backend-7dd4f45c9c-x8dmb      0/1 nodes are available: 1 node(s) were unschedulable. no new claims to deallocate, preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.
-5m7s        Warning   FailedScheduling          pod/backend-b5697ccf8-4gnr7       0/1 nodes are available: 1 node(s) were unschedulable. no new claims to deallocate, preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.
-5m7s        Normal    SuccessfulCreate          replicaset/backend-b5697ccf8      Created pod: backend-b5697ccf8-4gnr7
-5m7s        Normal    ScalingReplicaSet         deployment/backend                Scaled up replica set backend-b5697ccf8 from 0 to 1
-4m46s       Normal    DeletingNode              node/ip-10-0-1-134.ec2.internal   Deleting node ip-10-0-1-134.ec2.internal because it does not exist in the cloud provider
-4m41s       Normal    RemovingNode              node/ip-10-0-1-134.ec2.internal   Node ip-10-0-1-134.ec2.internal event: Removing Node ip-10-0-1-134.ec2.internal from Controller
-4m30s       Normal    EnsuringLoadBalancer      service/backend                   Ensuring load balancer
-4m30s       Warning   UnAvailableLoadBalancer   service/backend                   There are no available nodes for LoadBalancer
-4m28s       Normal    EnsuredLoadBalancer       service/backend                   Ensured load balancer
-4m28s       Normal    EnsuringLoadBalancer      service/frontend                  Ensuring load balancer
-4m28s       Warning   UnAvailableLoadBalancer   service/frontend                  There are no available nodes for LoadBalancer
-4m26s       Normal    EnsuredLoadBalancer       service/frontend                  Ensured load balancer
-8s          Warning   FailedScheduling          pod/backend-7dd4f45c9c-x8dmb      no nodes available to schedule pods
-2s          Warning   FailedScheduling          pod/frontend-77b468bb67-9c62r     no nodes available to schedule pods
+46m         Warning   FailedScheduling          pod/frontend-77b468bb67-9c62r     0/1 nodes are available: 1 node(s) were unschedulable. no new claims to deallocate, preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.
+45m         Warning   FailedScheduling          pod/backend-7dd4f45c9c-x8dmb      0/1 nodes are available: 1 node(s) were unschedulable. no new claims to deallocate, preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.
+44m         Warning   FailedScheduling          pod/backend-b5697ccf8-4gnr7       0/1 nodes are available: 1 node(s) were unschedulable. no new claims to deallocate, preemption: 0/1 nodes are available: 1 Preemption is not helpful for scheduling.
+44m         Normal    SuccessfulCreate          replicaset/backend-b5697ccf8      Created pod: backend-b5697ccf8-4gnr7
+44m         Normal    ScalingReplicaSet         deployment/backend                Scaled up replica set backend-b5697ccf8 from 0 to 1
+44m         Normal    DeletingNode              node/ip-10-0-1-134.ec2.internal   Deleting node ip-10-0-1-134.ec2.internal because it does not exist in the cloud provider
+44m         Normal    RemovingNode              node/ip-10-0-1-134.ec2.internal   Node ip-10-0-1-134.ec2.internal event: Removing Node ip-10-0-1-134.ec2.internal from Controller
+44m         Normal    EnsuringLoadBalancer      service/backend                   Ensuring load balancer
+44m         Warning   UnAvailableLoadBalancer   service/backend                   There are no available nodes for LoadBalancer
+44m         Normal    EnsuringLoadBalancer      service/frontend                  Ensuring load balancer
+44m         Normal    EnsuredLoadBalancer       service/backend                   Ensured load balancer
+44m         Warning   UnAvailableLoadBalancer   service/frontend                  There are no available nodes for LoadBalancer
+44m         Normal    EnsuredLoadBalancer       service/frontend                  Ensured load balancer
+30m         Normal    SuccessfulCreate          replicaset/frontend-69648468c9    Created pod: frontend-69648468c9-6swls
+30m         Normal    ScalingReplicaSet         deployment/frontend               Scaled up replica set frontend-69648468c9 from 0 to 1
+6m1s        Warning   FailedScheduling          pod/frontend-77b468bb67-9c62r     no nodes available to schedule pods
+4m31s       Warning   FailedScheduling          pod/backend-b5697ccf8-4gnr7       no nodes available to schedule pods
+2m9s        Normal    SuccessfulDelete          replicaset/frontend-77b468bb67    Deleted pod: frontend-77b468bb67-9c62r
+2m9s        Normal    SuccessfulCreate          replicaset/frontend-d4c7c8f9f     Created pod: frontend-d4c7c8f9f-92sgc
+2m9s        Normal    ScalingReplicaSet         deployment/frontend               Scaled down replica set frontend-77b468bb67 from 1 to 0
+2m9s        Normal    ScalingReplicaSet         deployment/frontend               Scaled up replica set frontend-d4c7c8f9f from 0 to 1
+14s         Warning   FailedScheduling          pod/frontend-69648468c9-6swls     no nodes available to schedule pods
+4s          Warning   FailedScheduling          pod/backend-7dd4f45c9c-x8dmb      no nodes available to schedule pods
+0s          Warning   FailedScheduling          pod/frontend-d4c7c8f9f-92sgc      no nodes available to schedule pods
