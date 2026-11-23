@@ -127,14 +127,40 @@ jobs:
           ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
           echo "AWS Account ID: $ACCOUNT_ID"
 
-          # 1. Authorize worker node role via EKS Access Entry (for API_AND_CONFIG_MAP mode)
+          # 1. Ensure eks_cluster_role exists (required by EKS when creating node groups)
+          echo "Checking eks_cluster_role..."
+          if ! aws iam get-role --role-name eks_cluster_role >/dev/null 2>&1; then
+            echo "Recreating eks_cluster_role..."
+            aws iam create-role \
+              --role-name eks_cluster_role \
+              --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"eks.amazonaws.com"},"Action":"sts:AssumeRole"}]}' || true
+            aws iam attach-role-policy --role-name eks_cluster_role --policy-arn "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy" || true
+            aws iam attach-role-policy --role-name eks_cluster_role --policy-arn "arn:aws:iam::aws:policy/AmazonEKSServicePolicy" || true
+          fi
+
+          # 2. Ensure udacity-node-group role exists
+          echo "Checking udacity-node-group role..."
+          if ! aws iam get-role --role-name udacity-node-group >/dev/null 2>&1; then
+            echo "Recreating udacity-node-group role..."
+            aws iam create-role \
+              --role-name udacity-node-group \
+              --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}' || true
+            aws iam attach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy" || true
+            aws iam attach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy" || true
+            aws iam attach-role-policy --role-name udacity-node-group --policy-arn "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly" || true
+          fi
+
+          # Wait 5 seconds for IAM propagation
+          sleep 5
+
+          # 3. Authorize worker node role via EKS Access Entry (for API_AND_CONFIG_MAP mode)
           echo "Configuring EKS access entry for worker node role..."
           aws eks create-access-entry \
             --cluster-name ${{ env.EKS_CLUSTER_NAME }} \
             --principal-arn "arn:aws:iam::$ACCOUNT_ID:role/udacity-node-group" \
             --type EC2_LINUX 2>/dev/null || true
 
-          # 2. Configure aws-auth ConfigMap
+          # 4. Configure aws-auth ConfigMap
           echo "Applying aws-auth ConfigMap..."
           sed "s/ACCOUNT_ID/$ACCOUNT_ID/g" $GITHUB_WORKSPACE/setup/aws-auth-patch.yaml | kubectl apply -f - || true
 
