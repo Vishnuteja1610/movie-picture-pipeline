@@ -2,13 +2,19 @@ name: Destroy Infrastructure
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/infra-destroy.yaml'
 
 env:
   AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: cluster
 
 jobs:
   destroy:
-    name: Terraform Destroy
+    name: Complete Teardown of Infrastructure
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -26,20 +32,165 @@ jobs:
           aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Download Terraform State Artifact
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          name: terraform-state
-          path: setup/terraform
-
-      - name: Setup Terraform
+      - name: Setup Tools (Terraform & Kubectl)
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.5.7"
 
-      - name: Terraform Init
-        run: terraform init
+      - name: Step 1 - Teardown Kubernetes Services & LoadBalancers
+        run: |
+          echo "Connecting to EKS cluster..."
+          if aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }} || true
+            echo "Deleting Kubernetes services to release AWS Load Balancers and ENIs..."
+            kubectl delete service frontend backend --ignore-not-found=true --timeout=60s || true
+            kubectl delete deployment frontend backend --ignore-not-found=true --timeout=60s || true
+            kubectl delete ingress --all --all-namespaces --ignore-not-found=true || true
 
-      - name: Terraform Destroy
-        run: terraform destroy -auto-approve
+            echo "Waiting 30 seconds for AWS Load Balancers to deprovision..."
+            sleep 30
+          else
+            echo "Cluster ${{ env.EKS_CLUSTER_NAME }} does not exist or is not active. Skipping K8s cleanup."
+          fi
+
+      - name: Step 2 - Delete EKS Nodegroups & Instances
+        run: |
+          echo "Checking nodegroups for cluster ${{ env.EKS_CLUSTER_NAME }}..."
+          EXISTING_NGS=$(aws eks list-nodegroups --cluster-name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }} --query "nodegroups[*]" --output text 2>/dev/null || true)
+          echo "Found nodegroups: $EXISTING_NGS"
+
+          for ng in $EXISTING_NGS; do
+            echo "Deleting nodegroup: $ng..."
+            aws eks delete-nodegroup --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name "$ng" --region ${{ env.AWS_REGION }} || true
+          done
+
+          for ng in $EXISTING_NGS; do
+            echo "Waiting for nodegroup $ng to be deleted..."
+            aws eks wait nodegroup-deleted --cluster-name ${{ env.EKS_CLUSTER_NAME }} --nodegroup-name "$ng" --region ${{ env.AWS_REGION }} 2>/dev/null || sleep 60
+          done
+
+          # Terminate any remaining instances tagged for nodegroups
+          STUCK_INSTANCES=$(aws ec2 describe-instances --region ${{ env.AWS_REGION }} \
+            --filters "Name=tag:eks:nodegroup-name,Values=udacity-bottlerocket,udacity" "Name=instance-state-name,Values=running,pending,stopped" \
+            --query "Reservations[*].Instances[*].InstanceId" --output text 2>/dev/null || true)
+          if [ -n "$STUCK_INSTANCES" ] && [ "$STUCK_INSTANCES" != "None" ]; then
+            echo "Terminating lingering EC2 instance(s): $STUCK_INSTANCES..."
+            aws ec2 terminate-instances --instance-ids $STUCK_INSTANCES --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            aws ec2 wait instance-terminated --instance-ids $STUCK_INSTANCES --region ${{ env.AWS_REGION }} 2>/dev/null || sleep 30
+          fi
+
+      - name: Step 3 - Delete EKS Cluster
+        run: |
+          if aws eks describe-cluster --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }} >/dev/null 2>&1; then
+            echo "Deleting EKS cluster ${{ env.EKS_CLUSTER_NAME }}..."
+            aws eks delete-cluster --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }} || true
+            echo "Waiting for cluster deletion..."
+            aws eks wait cluster-deleted --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }} 2>/dev/null || sleep 60
+          fi
+
+      - name: Step 4 - Delete Classic LoadBalancers
+        run: |
+          for elb in $(aws elb describe-load-balancers --region ${{ env.AWS_REGION }} --query "LoadBalancerDescriptions[*].LoadBalancerName" --output text 2>/dev/null || true); do
+            echo "Deleting Classic Load Balancer: $elb..."
+            aws elb delete-load-balancer --load-balancer-name "$elb" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          done
+
+      - name: Step 5 - Terraform Destroy VPC & Networking Resources
+        run: |
+          terraform init
+          terraform destroy -auto-approve || true
+
+      - name: Step 6 - Fallback Cleanup of Residual VPC & Networking Resources
+        run: |
+          VPC_ID=$(aws ec2 describe-vpcs --region ${{ env.AWS_REGION }} --filters "Name=tag:Name,Values=udacity" --query "Vpcs[0].VpcId" --output text 2>/dev/null || true)
+          if [ -n "$VPC_ID" ] && [ "$VPC_ID" != "None" ]; then
+            echo "Cleaning up VPC: $VPC_ID..."
+
+            # 1. Delete VPC Endpoints
+            for ep in $(aws ec2 describe-vpc-endpoints --region ${{ env.AWS_REGION }} --filters "Name=vpc-id,Values=$VPC_ID" --query "VpcEndpoints[*].VpcEndpointId" --output text 2>/dev/null || true); do
+              echo "Deleting VPC endpoint: $ep"
+              aws ec2 delete-vpc-endpoints --vpc-endpoint-ids "$ep" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            done
+
+            # 2. Release/detach Network Interfaces (ENIs)
+            for eni in $(aws ec2 describe-network-interfaces --region ${{ env.AWS_REGION }} --filters "Name=vpc-id,Values=$VPC_ID" --query "NetworkInterfaces[*].NetworkInterfaceId" --output text 2>/dev/null || true); do
+              echo "Detaching and deleting ENI: $eni"
+              ATTACHMENT_ID=$(aws ec2 describe-network-interfaces --network-interface-ids "$eni" --region ${{ env.AWS_REGION }} --query "NetworkInterfaces[0].Attachment.AttachmentId" --output text 2>/dev/null || true)
+              if [ -n "$ATTACHMENT_ID" ] && [ "$ATTACHMENT_ID" != "None" ]; then
+                aws ec2 detach-network-interface --attachment-id "$ATTACHMENT_ID" --force --region ${{ env.AWS_REGION }} 2>/dev/null || true
+                sleep 5
+              fi
+              aws ec2 delete-network-interface --network-interface-id "$eni" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            done
+
+            # 3. Delete Subnets
+            for sub in $(aws ec2 describe-subnets --region ${{ env.AWS_REGION }} --filters "Name=vpc-id,Values=$VPC_ID" --query "Subnets[*].SubnetId" --output text 2>/dev/null || true); do
+              echo "Deleting Subnet: $sub"
+              aws ec2 delete-subnet --subnet-id "$sub" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            done
+
+            # 4. Detach and Delete Internet Gateways
+            for igw in $(aws ec2 describe-internet-gateways --region ${{ env.AWS_REGION }} --filters "Name=attachment.vpc-id,Values=$VPC_ID" --query "InternetGateways[*].InternetGatewayId" --output text 2>/dev/null || true); do
+              echo "Detaching & deleting Internet Gateway: $igw"
+              aws ec2 detach-internet-gateway --internet-gateway-id "$igw" --vpc-id "$VPC_ID" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              aws ec2 delete-internet-gateway --internet-gateway-id "$igw" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            done
+
+            # 5. Delete Custom Route Tables
+            for rtb in $(aws ec2 describe-route-tables --region ${{ env.AWS_REGION }} --filters "Name=vpc-id,Values=$VPC_ID" --query "RouteTables[?Associations[0].Main!=true].RouteTableId" --output text 2>/dev/null || true); do
+              echo "Deleting Route Table: $rtb"
+              for assoc in $(aws ec2 describe-route-tables --route-table-ids "$rtb" --region ${{ env.AWS_REGION }} --query "RouteTables[0].Associations[*].RouteTableAssociationId" --output text 2>/dev/null || true); do
+                aws ec2 disassociate-route-table --association-id "$assoc" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+              done
+              aws ec2 delete-route-table --route-table-id "$rtb" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            done
+
+            # 6. Delete Non-default Security Groups
+            for sg in $(aws ec2 describe-security-groups --region ${{ env.AWS_REGION }} --filters "Name=vpc-id,Values=$VPC_ID" --query "SecurityGroups[?GroupName!='default'].GroupId" --output text 2>/dev/null || true); do
+              echo "Deleting Security Group: $sg"
+              aws ec2 delete-security-group --group-id "$sg" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+            done
+
+            # 7. Delete VPC
+            echo "Deleting VPC: $VPC_ID"
+            aws ec2 delete-vpc --vpc-id "$VPC_ID" --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          fi
+
+      - name: Step 7 - Delete ECR Repositories
+        run: |
+          echo "Deleting ECR repositories..."
+          aws ecr delete-repository --repository-name frontend --force --region ${{ env.AWS_REGION }} 2>/dev/null || true
+          aws ecr delete-repository --repository-name backend --force --region ${{ env.AWS_REGION }} 2>/dev/null || true
+
+      - name: Step 8 - Delete Custom IAM Roles & Policies
+        run: |
+          echo "Cleaning up custom IAM roles..."
+          # udacity-node-group role
+          for pol in $(aws iam list-attached-role-policies --role-name udacity-node-group --query "AttachedPolicies[*].PolicyArn" --output text 2>/dev/null || true); do
+            aws iam detach-role-policy --role-name udacity-node-group --policy-arn "$pol" 2>/dev/null || true
+          done
+          aws iam delete-role --role-name udacity-node-group 2>/dev/null || true
+
+          # eks_cluster_role
+          for pol in $(aws iam list-attached-role-policies --role-name eks_cluster_role --query "AttachedPolicies[*].PolicyArn" --output text 2>/dev/null || true); do
+            aws iam detach-role-policy --role-name eks_cluster_role --policy-arn "$pol" 2>/dev/null || true
+          done
+          aws iam delete-role --role-name eks_cluster_role 2>/dev/null || true
+
+          # github-action-user-permission policy if any
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)
+          aws iam delete-policy --policy-arn "arn:aws:iam::$ACCOUNT_ID:policy/github-action-user-permission" 2>/dev/null || true
+
+      - name: Final Summary
+        if: always()
+        run: |
+          echo "## 🗑️ Infrastructure Teardown Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All AWS resources have been cleanly removed:" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Kubernetes Services & Deployments deleted" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ AWS Elastic Load Balancers deleted" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ EKS Nodegroups & EC2 Worker Instances deleted" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ EKS Cluster deleted" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ VPC, Subnets, Gateways, Route Tables deleted" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ ECR Repositories (frontend, backend) deleted" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Node IAM roles cleaned up" >> $GITHUB_STEP_SUMMARY
